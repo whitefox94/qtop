@@ -29,6 +29,7 @@ from collections import namedtuple, OrderedDict, Counter
 from os.path import realpath
 from signal import signal, SIGPIPE, SIG_DFL
 import termios
+import shutil
 import contextlib
 import glob
 import tempfile
@@ -357,7 +358,7 @@ def auto_get_avail_batch_system(config):
     """
     # TODO pbsnodes etc should not be hardcoded!
     for system, batch_command in config["signature_commands"].items():
-        NOT_FOUND = subprocess.call(["/usr/bin/which", batch_command], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        NOT_FOUND = shutil.which(batch_command) is None
         if not NOT_FOUND:
             if system != "demo":
                 logging.debug("Auto-detected scheduler: %s" % system)
