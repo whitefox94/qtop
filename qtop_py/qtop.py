@@ -174,7 +174,10 @@ def get_date_obj_from_str(s, now):
         _inp_datetime = datetime.datetime.strptime(s, "%m%dT%H%M")
         inp_datetime = _inp_datetime.replace(year=now.year, second=0)
     else:
-        logging.critical("The datetime format provided is incorrect.\nTry one of the formats: yyyymmddTHHMMSS, HHMM, mmddTHHMM.")
+        raise ValueError(
+            "The datetime format provided is incorrect.\n"
+            "Try one of the formats: yyyymmddTHHMMSS, HHMM, mmddTHHMM."
+        )
     return inp_datetime
 
 
