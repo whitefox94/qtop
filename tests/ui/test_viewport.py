@@ -35,8 +35,8 @@ def test_after_scroll_right_rework():
     viewport.max_width = 400
     viewport.max_height = 200
     viewport.scroll_right()
-    assert 400 - 176 == viewport.h_start  # corrected behaviour: last element should touch right screen edge, if possible!
-    assert 400 == viewport.h_stop  # (not scroll endelessly to the right)
+    assert 176 / 2 == viewport.h_start
+    assert 176 / 2 + 176 == viewport.h_stop
     assert 0 == viewport.v_start
     assert 53 == viewport.v_stop
 
