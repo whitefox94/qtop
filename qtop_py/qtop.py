@@ -312,7 +312,7 @@ def calculate_term_size(config, FALLBACK_TERM_SIZE):
         term_height, term_columns = [int(x) for x in tty_size.strip().split()]
         logging.debug('terminal size v, h from "stty size": %s, %s' % (term_height, term_columns))
     else:
-        logging.warn("Failed to autodetect terminal size. (Running in an IDE?in a pipe?) Trying values in %s." % QTOPCONF_YAML)
+        logging.warning("Failed to autodetect terminal size. (Running in an IDE?in a pipe?) Trying values in %s." % QTOPCONF_YAML)
         try:
             term_height, term_columns = viewport.get_term_size()
             if not all(term_height, term_columns):
@@ -836,7 +836,7 @@ def attempt_faster_xml_parsing(config):
         try:
             from lxml import etree
         except ImportError:
-            logging.warn('Module lxml is missing. Try issuing "pip install lxml". Reverting to xml module.')
+            logging.warning('Module lxml is missing. Try issuing "pip install lxml". Reverting to xml module.')
             from xml.etree import ElementTree as etree  # noqa: F401
 
 
@@ -1210,7 +1210,7 @@ class WNOccupancy(object):
             sys.exit(1)
         min_len = min(user_max_len, real_max_len)
         if real_max_len > user_max_len:
-            logging.warn("Some longer %(attr)ss have been cropped due to %(attr)s length restriction by user" % {"attr": part_name})
+            logging.warning("Some longer %(attr)ss have been cropped due to %(attr)s length restriction by user" % {"attr": part_name})
 
         # initialisation of lines
         multiline_map = OrderedDict()
