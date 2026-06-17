@@ -66,7 +66,7 @@ class SGEStatExtractor(StatExtractor):
             try:
                 all_values = self._extract_job_info(all_values, queue_elem, "job_list", queue_name=queue_name_elem.text)
             except ValueError:
-                logging.warn("No jobs found in XML file!")
+                logging.warning("No jobs found in XML file!")
 
         # look for the remaining, pending jobs, found later in the xml file
         job_info_elem = root.find("./job_info")
@@ -76,7 +76,7 @@ class SGEStatExtractor(StatExtractor):
             try:
                 all_values = self._extract_job_info(all_values, job_info_elem, "job_list", queue_name="Pending")
             except ValueError:
-                logging.warn("No jobs found in XML file!")
+                logging.warning("No jobs found in XML file!")
 
         return all_values
 
