@@ -16,14 +16,14 @@
     --bg: #0e1116; --panel: #171b22; --ink: #e6e9ee; --muted: #97a1b0;
     --line: #2a303a; --accent: #6cb2ff; --chip: #222832;
     --crit: #ff6b70; --high: #ff9a4d; --med: #e2c14a; --low: #86c873;
-    --kev: #e07be0; --ai: #4fd1c9;
+    --kev: #e07be0; --ai: #4fd1c9; color-scheme: dark;
   }
 }
 :root[data-theme="dark"] {
   --bg: #0e1116; --panel: #171b22; --ink: #e6e9ee; --muted: #97a1b0;
   --line: #2a303a; --accent: #6cb2ff; --chip: #222832;
   --crit: #ff6b70; --high: #ff9a4d; --med: #e2c14a; --low: #86c873;
-  --kev: #e07be0; --ai: #4fd1c9;
+  --kev: #e07be0; --ai: #4fd1c9; color-scheme: dark;
 }
 * { box-sizing: border-box; }
 body {
@@ -31,8 +31,14 @@ body {
   font: 15px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
 }
 header {
-  position: sticky; top: 0; z-index: 5; background: var(--bg);
-  border-bottom: 1px solid var(--line); padding: 10px 16px 0;
+  position: sticky; top: env(safe-area-inset-top, 0px); z-index: 5; background: var(--bg);
+  border-bottom: 1px solid var(--line); padding-block: 10px 0;
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+}
+body::before {
+  content: ""; position: fixed; inset: 0 0 auto; z-index: 10;
+  height: env(safe-area-inset-top, 0px); background: var(--bg);
 }
 .wrap { max-width: 860px; margin: 0 auto; }
 .top { display: flex; align-items: center; gap: 10px; }
@@ -54,7 +60,13 @@ button:hover { border-color: var(--accent); }
 }
 .tabs button[aria-selected=true] { color: var(--ink); border-bottom-color: var(--accent); font-weight: 600; }
 .tabs .n { font-size: 11px; color: var(--muted); margin-left: 4px; font-weight: 400; }
-main { padding: 12px 16px 60px; }
+main {
+  padding-block: 12px 60px;
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+}
+#watchin { flex: 1 1 100%; min-width: 0; }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 article {
   background: var(--panel); border: 1px solid var(--line); border-radius: 10px;
   padding: 12px 14px; margin-bottom: 8px; border-left: 3px solid var(--line);
@@ -104,6 +116,7 @@ details td { padding: 4px 6px; border-top: 1px solid var(--line); vertical-align
       </select>
       <select id="src"><option value="">All sources</option></select>
       <button id="watchbtn" title="Keywords you care about: matches are highlighted and get their own tab">Watchlist</button>
+      <input id="watchin" hidden aria-label="Watchlist keywords" placeholder="Watchlist keywords, comma-separated: fortinet, openssl, …">
     </div>
     <div class="tabs" id="tabs" role="tablist"></div>
   </div>
@@ -269,10 +282,14 @@ $("q").oninput = e => { state.q = e.target.value; state.shown = PAGE; render(); 
 $("sev").onchange = e => { state.sev = +e.target.value; state.shown = PAGE; render(); };
 $("src").onchange = e => { state.src = e.target.value; state.shown = PAGE; render(); };
 $("more").onclick = () => { state.shown += PAGE; render(); };
+$("watchin").value = watch.join(", ");
 $("watchbtn").onclick = () => {
-  const v = prompt("Watchlist keywords, comma-separated (vendors, products, CVE IDs…):", watch.join(", "));
-  if (v == null) return;
-  watch = v.split(",").map(s => s.trim()).filter(Boolean);
+  const w = $("watchin");
+  w.hidden = !w.hidden;
+  if (!w.hidden) w.focus();
+};
+$("watchin").oninput = e => {
+  watch = e.target.value.split(",").map(s => s.trim()).filter(Boolean);
   store.set("secfeed.watch", watch);
   if (!watch.length && state.tab === "watch") state.tab = "all";
   markWatch(); render();
