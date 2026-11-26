@@ -96,7 +96,9 @@ article.read h2 a { color: var(--muted); }
 .star[aria-pressed=true] { color: var(--med); }
 .cats { display: flex; flex-direction: column; gap: 8px; margin: 0 0 12px; }
 .cats h3 { font-size: 11px; letter-spacing: 0.07em; text-transform: uppercase; color: var(--muted); margin: 0 0 4px; font-weight: 600; }
-.catrow { display: flex; gap: 6px; flex-wrap: wrap; }
+/* One swipeable line per row, so the list stays near the top on a phone. */
+.catrow { display: flex; gap: 6px; overflow-x: auto; scrollbar-width: none; padding-bottom: 2px; }
+.catrow .cat { white-space: nowrap; flex: none; }
 .cat { font-size: 12.5px; padding: 3px 10px; border-radius: 999px; background: var(--chip); border: 1px solid transparent; }
 .cat[aria-pressed=true] { background: var(--accent); color: var(--bg); font-weight: 600; }
 .cat .n { opacity: 0.7; margin-left: 4px; font-size: 11px; }
