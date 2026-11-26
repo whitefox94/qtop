@@ -573,7 +573,9 @@ function renderCats(tab) {
     for (const i of filtered(tab, key)) for (const c of i[field] || []) counts.set(c, (counts.get(c) || 0) + 1);
     if (!counts.size) continue;
     const row = el("div", "catrow");
-    const sorted = [...counts].sort((a, b) => (a[0] === "Other") - (b[0] === "Other") || b[1] - a[1]);
+    // Chosen chip first (so it stays in view), "Other" last, then by count.
+    const sorted = [...counts].sort((a, b) => (b[0] === state[key]) - (a[0] === state[key]) ||
+      (a[0] === "Other") - (b[0] === "Other") || b[1] - a[1]);
     for (const [name, n] of sorted) {
       const b = el("button", "cat", name);
       b.append(el("span", "n", String(n)));
