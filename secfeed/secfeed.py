@@ -67,11 +67,16 @@ AREAS = [
                       r"sonicwall|juniper|junos|citrix|netscaler|big-ip|\brouters?\b|firewall|\bvpn\b|"
                       r"zyxel|d-link|tp-link|netgear|mikrotik|ubiquiti|tenda|totolink|draytek|"
                       r"aruba|check point|sophos|access point"),
-    ("Microsoft", r"microsoft|windows|exchange server|sharepoint|\boffice\b|outlook|active directory|"
-                  r"\.net\b|hyper-v|\bteams\b"),
+    ("Windows", r"\bwindows\b|windows ?(10|11|server)|win32k?\b|microsoft windows|"
+                r"\bwin32\b|ntlm|\bsmb\b|active directory|hyper-v|\bwsl\b|defender"),
+    ("Microsoft", r"microsoft|exchange server|sharepoint|\boffice\b|outlook|onedrive|"
+                  r"\.net\b|\bteams\b|power(shell|point)|visual studio|dynamics 365"),
     ("Linux & Unix", r"linux|kernel|ubuntu|debian|red hat|\brhel\b|freebsd|openbsd|glibc|systemd|"
                      r"openssh|sudo\b|x\.org"),
-    ("Apple & mobile", r"\bapple\b|\bios\b|ipados|macos|android|samsung|iphone|\bpixel\b|qualcomm|mediatek"),
+    ("Android phones", r"\bandroid\b|samsung|\bpixel\b|qualcomm|mediatek|\boneplus\b|xiaomi|"
+                       r"huawei|\bgalaxy\b|exynos|google phone"),
+    ("iPhone & Apple", r"\bapple\b|iphone|ipados|\bipad\b|macos|watchos|visionos|\bios [0-9]|"
+                       r"apple ios|safari|webkit"),
     ("Browsers", r"chrome|chromium|firefox|safari|webkit|\bedge\b|\bv8\b|browser extension"),
     ("Cloud & virtualization", r"kubernetes|docker|container|\baws\b|amazon|azure|\bgcp\b|google cloud|"
                                r"terraform|\bhelm\b|openshift|vmware|esxi|vcenter|hypervisor|\bxen\b|"

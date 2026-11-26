@@ -48,10 +48,11 @@ python3 -m unittest discover -s tests
 ### CVE categories
 
 On the Priority, CVEs, Exploited and Exploits tabs, two rows of filter chips
-sort vulnerabilities by **what they affect** (WordPress & CMS, Network & VPN,
-Microsoft, Linux & Unix, Apple & mobile, Browsers, Cloud & virtualization,
-IoT & industrial, Databases, Enterprise apps, Dev tools & libraries, Web apps
-& APIs, AI & ML) and by **kind of attack** (remote code execution, memory
+sort vulnerabilities by **what they affect** (Windows, Microsoft, Android
+phones, iPhone & Apple, WordPress & CMS, Network & VPN, Linux & Unix,
+Browsers, Cloud & virtualization, IoT & industrial, Databases, Enterprise
+apps, Dev tools & libraries, Web apps & APIs, AI & ML) and by **kind of
+attack** (remote code execution, memory
 corruption, SQL injection, cross-site scripting, auth & access bypass,
 privilege escalation, file access, request forgery, information leak, denial
 of service). Tap one from each row to combine them, for example "Network &
