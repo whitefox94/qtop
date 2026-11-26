@@ -192,6 +192,16 @@ class Parsers(unittest.TestCase):
         self.assertLessEqual(sf.parse_date(i["published"]), sf.utcnow())
 
 
+class Classify(unittest.TestCase):
+    def test_area_and_attack(self):
+        areas, attacks = sf.classify("The Foo plugin for WordPress is vulnerable to SQL Injection")
+        self.assertEqual((areas, attacks), (["WordPress & CMS"], ["SQL injection"]))
+        areas, attacks = sf.classify("Fortinet FortiOS issue", ["CWE-787"])
+        self.assertEqual((areas, attacks), (["Network & VPN"], ["Memory corruption"]))
+        self.assertEqual(sf.classify("Something obscure"), (["Other"], ["Other"]))
+        self.assertIn("AI & ML", sf.classify("Prompt injection in an MCP server")[0])
+
+
 class Http(unittest.TestCase):
     def test_get_retries_transient_errors_but_not_4xx(self):
         import urllib.error
@@ -259,6 +269,7 @@ class Storage(unittest.TestCase):
         self.assertEqual(len(data["items"]), 1, "old item pruned, no duplicates")
         self.assertIn("kev", data["items"][0]["tags"])
         self.assertEqual(data["items"][0]["details"], {})
+        self.assertEqual(data["items"][0]["areas"], [], "only vulnerabilities are classified")
         states = {s["name"]: s["state"] for s in data["sources"]}
         self.assertEqual(states, {"News": "ok", "Broken": "error", "X": "skipped"})
 

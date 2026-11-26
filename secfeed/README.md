@@ -45,6 +45,23 @@ python3 -m unittest discover -s tests
 | Social | Posts | X and Threads, with API tokens (see below) |
 | Saved | Items you starred | kept in your browser, outlives the 30-day history |
 
+### CVE categories
+
+On the Priority, CVEs, Exploited and Exploits tabs, two rows of filter chips
+sort vulnerabilities by **what they affect** (WordPress & CMS, Network & VPN,
+Microsoft, Linux & Unix, Apple & mobile, Browsers, Cloud & virtualization,
+IoT & industrial, Databases, Enterprise apps, Dev tools & libraries, Web apps
+& APIs, AI & ML) and by **kind of attack** (remote code execution, memory
+corruption, SQL injection, cross-site scripting, auth & access bypass,
+privilege escalation, file access, request forgery, information leak, denial
+of service). Tap one from each row to combine them, for example "Network &
+VPN" plus "Remote code execution".
+
+Categories come from the published weakness type (CWE) where there is one and
+from keywords in the description otherwise, so some items land in "Other" and
+a few will be misfiled. The rules are the `AREAS` and `ATTACKS` lists at the
+top of `secfeed.py` and are easy to extend.
+
 ### Priority ranking
 
 Most high-severity CVEs are never attacked, so severity alone is a poor guide.

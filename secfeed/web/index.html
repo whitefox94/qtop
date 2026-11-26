@@ -94,6 +94,13 @@ article p { margin: 0; color: var(--muted); font-size: 13.5px; overflow-wrap: an
 article.read h2 a { color: var(--muted); }
 .star { margin-left: auto; border: 0; background: none; padding: 0 2px; font-size: 17px; line-height: 1; color: var(--muted); }
 .star[aria-pressed=true] { color: var(--med); }
+.cats { display: flex; flex-direction: column; gap: 8px; margin: 0 0 12px; }
+.cats h3 { font-size: 11px; letter-spacing: 0.07em; text-transform: uppercase; color: var(--muted); margin: 0 0 4px; font-weight: 600; }
+.catrow { display: flex; gap: 6px; flex-wrap: wrap; }
+.cat { font-size: 12.5px; padding: 3px 10px; border-radius: 999px; background: var(--chip); border: 1px solid transparent; }
+.cat[aria-pressed=true] { background: var(--accent); color: var(--bg); font-weight: 600; }
+.cat .n { opacity: 0.7; margin-left: 4px; font-size: 11px; }
+.kind { color: var(--muted); }
 .note { color: var(--muted); font-size: 12.5px; margin: 0 0 10px; }
 .d-links { display: flex; gap: 6px 14px; flex-wrap: wrap; font-size: 13.5px; }
 .d-links a { color: var(--accent); }
@@ -164,6 +171,7 @@ dialog::backdrop { background: rgba(0, 0, 0, 0.55); }
 <main>
   <div class="wrap">
     <p class="note" id="note" hidden></p>
+    <div class="cats" id="cats" hidden></div>
     <div id="list"></div>
     <button id="more" hidden>Show more</button>
     <details>
@@ -206,7 +214,7 @@ const TABS = [
   ["watch", "Watchlist", i => i._watch],
 ];
 const PAGE = 60;
-const state = { tab: "all", q: "", sev: 0, src: "", shown: PAGE, items: [], sources: [] };
+const state = { tab: "all", q: "", sev: 0, src: "", area: "", attack: "", shown: PAGE, items: [], sources: [] };
 const $ = id => document.getElementById(id);
 
 const store = {
@@ -280,12 +288,19 @@ function markWatch() {
   }
 }
 
-function filtered(tab) {
+// Tabs that list vulnerabilities get the two category filters.
+const CAT_TABS = ["priority", "cve", "exploited", "exploit"];
+
+function filtered(tab, skip) {
   const q = state.q.trim().toLowerCase(), opt = tab[3] || {};
+  const cats = CAT_TABS.includes(tab[0]);
+  const area = cats && skip !== "area" && state.area, attack = cats && skip !== "attack" && state.attack;
   let rows = (opt.list ? opt.list() : state.items).filter(i =>
     tab[2](i) &&
     (!q || i._text.includes(q)) &&
     (!state.src || i.source === state.src) &&
+    (!area || (i.areas || []).includes(area)) &&
+    (!attack || (i.attacks || []).includes(attack)) &&
     // Severity filter only hides items that have a score below the bar;
     // news stories and unscored fresh CVEs are hidden too, since you asked for "at least".
     (!state.sev || (i.severity != null && i.severity >= state.sev)));
@@ -330,6 +345,8 @@ function metaRow(i) {
   if (i.tags.includes("kev")) meta.append(el("span", "pill kev", "KNOWN EXPLOITED"));
   else if (i.tags.includes("exploited")) meta.append(el("span", "pill kev", "EXPLOITED"));
   if (i.tags.includes("ai") && i.category !== "ai") meta.append(el("span", "pill ai", "AI"));
+  const kind = [(i.areas || [])[0], (i.attacks || [])[0]].filter(c => c && c !== "Other").join(" · ");
+  if (kind) meta.append(el("span", "kind", "· " + kind));
   if (i._exploit) meta.append(el("span", "pill hot", "EXPLOIT PUBLIC"));
   if (i.epss != null && i.epss >= 0.05) meta.append(el("span", "pill " + (i.epss >= 0.3 ? "hot" : "tag"), "EPSS " + Math.round(i.epss * 100) + "%"));
   for (const t of ["poc", "paper", "ransomware", "ctf", "breach", "release"]) if (i.tags.includes(t)) meta.append(el("span", "pill tag", t.toUpperCase()));
@@ -487,6 +504,8 @@ function openDetail(i) {
   fact("Published", new Date(i.published).toLocaleString());
   fact("Source", i.source);
   fact("CVE", i.cves.join(", "));
+  fact("Category", (i.areas || []).join(", "));
+  fact("Kind of attack", (i.attacks || []).join(", "));
   fact("Affects", (d.products || []).join(", "));
   fact("Weakness", (d.cwes || []).map(c => CWE[c] ? c + " (" + CWE[c][0] + ")" : c).join(", "));
   fact("CVSS vector", d.vector);
@@ -541,6 +560,31 @@ function openDetail(i) {
   dlg.scrollTop = 0;
 }
 
+function renderCats(tab) {
+  const box = $("cats");
+  box.hidden = !CAT_TABS.includes(tab[0]);
+  box.replaceChildren();
+  if (box.hidden) return;
+  for (const [key, field, title] of [["area", "areas", "What it affects"], ["attack", "attacks", "Kind of attack"]]) {
+    // Count against every other active filter, so a number is what you'd get by tapping.
+    const counts = new Map();
+    for (const i of filtered(tab, key)) for (const c of i[field] || []) counts.set(c, (counts.get(c) || 0) + 1);
+    if (!counts.size) continue;
+    const row = el("div", "catrow");
+    const sorted = [...counts].sort((a, b) => (a[0] === "Other") - (b[0] === "Other") || b[1] - a[1]);
+    for (const [name, n] of sorted) {
+      const b = el("button", "cat", name);
+      b.append(el("span", "n", String(n)));
+      b.setAttribute("aria-pressed", state[key] === name);
+      b.onclick = () => { state[key] = state[key] === name ? "" : name; state.shown = PAGE; render(); };
+      row.append(b);
+    }
+    const group = el("div");
+    group.append(el("h3", null, title), row);
+    box.append(group);
+  }
+}
+
 function render() {
   const tabs = $("tabs");
   tabs.replaceChildren();
@@ -557,6 +601,7 @@ function render() {
   }
   const tab = TABS.find(t => t[0] === state.tab) || TABS[0];
   const rows = filtered(tab);
+  renderCats(tab);
   const list = $("list");
   const note = (tab[3] || {}).note;
   $("note").hidden = !note; $("note").textContent = note || "";

@@ -56,6 +56,74 @@ EXPLOITED_RE = re.compile(
 )
 
 
+# Vulnerability categories. Two independent questions a reader asks of a CVE:
+# what does it affect, and what can an attacker do with it. Rules are tried in
+# order and every match counts, so "SQL injection in a WordPress plugin" lands
+# in both of its natural groups. Keyword rules are approximate by nature.
+AREAS = [
+    ("AI & ML", AI_RE),
+    ("WordPress & CMS", r"wordpress|drupal|joomla|magento|woocommerce|typo3|\bcms\b|prestashop|shopify"),
+    ("Network & VPN", r"fortinet|forti(os|gate|web|manager|proxy|client)|palo alto|pan-os|cisco|ivanti|"
+                      r"sonicwall|juniper|junos|citrix|netscaler|big-ip|\brouters?\b|firewall|\bvpn\b|"
+                      r"zyxel|d-link|tp-link|netgear|mikrotik|ubiquiti|tenda|totolink|draytek|"
+                      r"aruba|check point|sophos|access point"),
+    ("Microsoft", r"microsoft|windows|exchange server|sharepoint|\boffice\b|outlook|active directory|"
+                  r"\.net\b|hyper-v|\bteams\b"),
+    ("Linux & Unix", r"linux|kernel|ubuntu|debian|red hat|\brhel\b|freebsd|openbsd|glibc|systemd|"
+                     r"openssh|sudo\b|x\.org"),
+    ("Apple & mobile", r"\bapple\b|\bios\b|ipados|macos|android|samsung|iphone|\bpixel\b|qualcomm|mediatek"),
+    ("Browsers", r"chrome|chromium|firefox|safari|webkit|\bedge\b|\bv8\b|browser extension"),
+    ("Cloud & virtualization", r"kubernetes|docker|container|\baws\b|amazon|azure|\bgcp\b|google cloud|"
+                               r"terraform|\bhelm\b|openshift|vmware|esxi|vcenter|hypervisor|\bxen\b|"
+                               r"proxmox|openstack"),
+    ("IoT & industrial", r"scada|\bplcs?\b|siemens|schneider electric|rockwell|\bics\b|ip camera|"
+                         r"\bdvr\b|\bnvr\b|\biot\b|firmware|hikvision|dahua|modbus|printer|smart "),
+    ("Databases", r"mysql|postgres|mongodb|redis|oracle database|sql server|elasticsearch|mariadb|"
+                  r"sqlite|clickhouse"),
+    ("Enterprise apps", r"\bsap\b|oracle|salesforce|servicenow|atlassian|confluence|\bjira\b|zoho|"
+                        r"manageengine|veeam|solarwinds|ibm |adobe|zimbra|roundcube|moodle"),
+    ("Dev tools & libraries", r"\bnpm\b|pypi|\blibrary\b|gitlab|jenkins|\bgit\b|maven|\bsdk\b|"
+                              r"node\.js|python|\bphp\b|\bjava\b|\brust\b|golang|composer|"
+                              r"apache|nginx|openssl|grafana|open[- ]source"),
+    ("Web apps & APIs", r"web[- ](application|app|interface|ui|portal|server|console)|\bapis?\b|"
+                        r"\bhttp|\.php\b|login page|admin (panel|interface)|management interface|"
+                        r"dashboard|endpoint"),
+]
+ATTACKS = [
+    ("Remote code execution", r"remote code execution|\brce\b|arbitrary code|execute (arbitrary )?(code|commands)|"
+                              r"command injection|code injection|deserializ",
+     {"CWE-77", "CWE-78", "CWE-94", "CWE-502"}),
+    ("Memory corruption", r"buffer overflow|use[- ]after[- ]free|out[- ]of[- ]bounds|heap[- ]based|"
+                          r"stack[- ]based|memory corruption|integer overflow|type confusion",
+     {"CWE-119", "CWE-120", "CWE-121", "CWE-122", "CWE-125", "CWE-190", "CWE-416", "CWE-787", "CWE-843"}),
+    ("SQL injection", r"sql injection|\bsqli\b", {"CWE-89"}),
+    ("Cross-site scripting", r"cross[- ]site scripting|\bxss\b", {"CWE-79"}),
+    ("Auth & access bypass", r"authentication bypass|bypass(es|ing)? authentication|missing auth|"
+                             r"improper auth|authorization|access control|unauthenticated|account takeover|"
+                             r"hard[- ]coded (credential|password)",
+     {"CWE-284", "CWE-285", "CWE-287", "CWE-306", "CWE-639", "CWE-798", "CWE-862", "CWE-863"}),
+    ("Privilege escalation", r"privilege escalation|elevation of privilege|escalate (their )?privileges|"
+                             r"gain (root|system|administrator)", {"CWE-269"}),
+    ("File access", r"path traversal|directory traversal|arbitrary file|file upload|file inclusion|"
+                    r"\blfi\b", {"CWE-22", "CWE-23", "CWE-73", "CWE-434"}),
+    ("Request forgery", r"\bssrf\b|\bcsrf\b|request forgery", {"CWE-352", "CWE-918"}),
+    ("Information leak", r"information disclosure|sensitive information|disclose|exposure of",
+     {"CWE-200", "CWE-209", "CWE-532"}),
+    ("Denial of service", r"denial[- ]of[- ]service|\bdos\b|crash|resource exhaustion|infinite loop",
+     {"CWE-400", "CWE-476", "CWE-770", "CWE-835"}),
+]
+AREAS = [(n, r if hasattr(r, "search") else re.compile(r, re.I)) for n, r in AREAS]
+ATTACKS = [(n, re.compile(r, re.I), c) for n, r, c in ATTACKS]
+
+
+def classify(text, cwes=()):
+    """(areas, attacks) for a vulnerability; "Other" when nothing matches."""
+    cwes = set(cwes)
+    areas = [n for n, rx in AREAS if rx.search(text)][:3]
+    attacks = [n for n, rx, ids in ATTACKS if cwes & ids or rx.search(text)][:3]
+    return areas or ["Other"], attacks or ["Other"]
+
+
 # --------------------------------------------------------------------------
 # Small helpers
 # --------------------------------------------------------------------------
@@ -801,12 +869,22 @@ def export(db, limit=3000):
         tags = [t for t in r["tags"].split(",") if t]
         if "kev" not in tags and any(c in kev for c in cves):
             tags.append("kev")  # e.g. a news story about a CVE that is in KEV
+        details = json.loads(r["details"] or "{}")
+        areas = attacks = []
+        if r["category"] in ("cve", "exploit"):
+            # Classified here, not at fetch time, so rule changes apply to
+            # everything already in the database.
+            areas, attacks = classify(
+                " ".join([r["title"], r["summary"], details.get("description", ""),
+                          " ".join(details.get("products") or [])]),
+                details.get("cwes") or ())
         items.append({
+            "areas": areas, "attacks": attacks,
             "id": r["id"], "source": r["source"], "category": r["category"],
             "title": r["title"], "url": r["url"], "summary": r["summary"],
             "published": r["published"], "severity": r["severity"],
             "cves": cves, "tags": tags,
-            "details": json.loads(r["details"] or "{}"),
+            "details": details,
             # Highest exploitation probability among the CVEs this item mentions.
             "epss": max((epss[c] for c in cves if c in epss), default=(None, None))[0],
             "epss_pct": max((epss[c] for c in cves if c in epss), default=(None, None))[1],
