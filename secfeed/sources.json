@@ -1,6 +1,14 @@
 {
   "refresh_minutes": 30,
   "retention_days": 30,
+  "epss": true,
+  "alerts": {
+    "enabled": true,
+    "kev": true,
+    "exploited": false,
+    "keywords": [],
+    "max_per_refresh": 8
+  },
   "sources": [
     {"type": "nvd", "name": "NVD", "days": 2, "min_severity": 7.0},
     {"type": "kev", "name": "CISA KEV", "days": 30},
@@ -11,6 +19,46 @@
     {"type": "github_search", "name": "GitHub AI security", "category": "ai",
      "q": "prompt injection in:name,description,topics created:>{since}", "sort": "stars", "days": 30},
 
+    {"type": "rss", "name": "ZDI advisories", "category": "cve",
+     "url": "https://www.zerodayinitiative.com/rss/published/"},
+    {"type": "rss", "name": "oss-security", "category": "cve",
+     "url": "https://seclists.org/rss/oss-sec.rss"},
+
+    {"type": "rss", "name": "Exploit-DB", "category": "exploit", "tags": ["poc"],
+     "url": "https://www.exploit-db.com/rss.xml"},
+    {"type": "rss", "name": "Full Disclosure", "category": "exploit",
+     "url": "https://seclists.org/rss/fulldisclosure.rss"},
+
+    {"type": "rss", "name": "PortSwigger Research", "category": "research",
+     "url": "https://portswigger.net/research/rss"},
+    {"type": "rss", "name": "watchTowr Labs", "category": "research",
+     "url": "https://labs.watchtowr.com/rss/"},
+    {"type": "rss", "name": "ZDI blog", "category": "research",
+     "url": "https://www.zerodayinitiative.com/blog?format=rss"},
+    {"type": "rss", "name": "Unit 42", "category": "research",
+     "url": "https://unit42.paloaltonetworks.com/feed/"},
+    {"type": "rss", "name": "Cisco Talos", "category": "research",
+     "url": "https://blog.talosintelligence.com/rss/"},
+    {"type": "rss", "name": "The DFIR Report", "category": "research",
+     "url": "https://thedfirreport.com/feed/"},
+    {"type": "rss", "name": "Trail of Bits", "category": "research",
+     "url": "https://blog.trailofbits.com/feed/"},
+    {"type": "rss", "name": "Rapid7", "category": "research",
+     "url": "https://www.rapid7.com/blog/rss/"},
+
+    {"type": "rss", "name": "CTFtime: upcoming CTFs", "category": "learn", "tags": ["ctf"],
+     "url": "https://ctftime.org/event/list/upcoming/rss/"},
+    {"type": "rss", "name": "InfoSec Write-ups", "category": "learn",
+     "url": "https://infosecwriteups.com/feed"},
+
+    {"type": "github_releases", "name": "Tool releases", "category": "tools", "limit": 2,
+     "repos": ["projectdiscovery/nuclei", "projectdiscovery/nuclei-templates",
+               "rapid7/metasploit-framework", "sqlmapproject/sqlmap", "ffuf/ffuf",
+               "fortra/impacket", "SpecterOps/BloodHound", "zaproxy/zaproxy",
+               "NationalSecurityAgency/ghidra", "hashcat/hashcat"]},
+
+    {"type": "rss", "name": "Have I Been Pwned: breaches", "category": "news", "tags": ["breach"],
+     "url": "https://feeds.feedburner.com/HaveIBeenPwnedLatestBreaches"},
     {"type": "rss", "name": "The Hacker News", "category": "news",
      "url": "https://feeds.feedburner.com/TheHackersNews"},
     {"type": "rss", "name": "BleepingComputer", "category": "news",

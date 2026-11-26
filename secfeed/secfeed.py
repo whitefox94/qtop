@@ -137,6 +137,13 @@ def http_get(url, headers=None):
     return body
 
 
+def http_post(url, body, headers=None):
+    req = urllib.request.Request(url, data=body, method="POST",
+                                 headers={"User-Agent": USER_AGENT, **(headers or {})})
+    with urllib.request.urlopen(req, timeout=TIMEOUT) as resp:
+        resp.read(MAX_BODY)
+
+
 def http_json(url, headers=None):
     return json.loads(http_get(url, headers).decode("utf-8", "replace"))
 
@@ -378,6 +385,36 @@ def parse_github_search(data, source, category, tags=()):
     return items
 
 
+def parse_github_releases(data, repo, source, category):
+    items = []
+    for r in data:
+        if r.get("draft") or r.get("prerelease"):
+            continue
+        tag = r.get("tag_name") or ""
+        name = r.get("name") or ""
+        title = "%s %s" % (repo.split("/")[-1], tag)
+        if name and name != tag:
+            title += " — " + name
+        item = make_item(source, category, title, r.get("html_url"),
+                         r.get("body") or "", parse_date(r.get("published_at")),
+                         tags=["release"],
+                         details={"description": clean_text(r.get("body") or "", 2500)})
+        if item:
+            items.append(item)
+    return items
+
+
+def parse_epss(data):
+    """{CVE: (probability, percentile)} from FIRST's EPSS API."""
+    out = {}
+    for row in data.get("data") or []:
+        try:
+            out[row["cve"].upper()] = (float(row["epss"]), float(row["percentile"]))
+        except (KeyError, TypeError, ValueError):
+            continue
+    return out
+
+
 def parse_hn(data, source, category):
     items = []
     for h in data.get("hits", []):
@@ -492,6 +529,16 @@ def fetch_github_search(src):
                                          src.get("category", "cve"), src.get("tags", ()))}
 
 
+def fetch_github_releases(src):
+    items = []
+    for repo in src["repos"]:
+        url = "https://api.github.com/repos/%s/releases?per_page=%d" % (
+            urllib.parse.quote(repo), src.get("limit", 3))
+        items += parse_github_releases(http_json(url, _gh_headers()), repo, src["name"],
+                                       src.get("category", "tools"))
+    return {"items": items}
+
+
 def fetch_hn(src):
     url = "https://hn.algolia.com/api/v1/search_by_date?" + urllib.parse.urlencode({
         "query": src["query"], "tags": "story", "hitsPerPage": src.get("limit", 20),
@@ -529,7 +576,8 @@ def fetch_threads(src):
 
 FETCHERS = {
     "rss": fetch_rss, "nvd": fetch_nvd, "kev": fetch_kev, "ghsa": fetch_ghsa,
-    "github_search": fetch_github_search, "hn": fetch_hn,
+    "github_search": fetch_github_search, "github_releases": fetch_github_releases,
+    "hn": fetch_hn,
     "x": fetch_x, "threads": fetch_threads,
 }
 
@@ -546,6 +594,8 @@ CREATE TABLE IF NOT EXISTS items (
 );
 CREATE INDEX IF NOT EXISTS items_published ON items(published DESC);
 CREATE TABLE IF NOT EXISTS kev (cve TEXT PRIMARY KEY);
+CREATE TABLE IF NOT EXISTS epss (cve TEXT PRIMARY KEY, score REAL, percentile REAL,
+                                 checked_at TEXT);
 CREATE TABLE IF NOT EXISTS source_status (
     name TEXT PRIMARY KEY, type TEXT, state TEXT, detail TEXT,
     count INTEGER, checked_at TEXT
@@ -582,6 +632,79 @@ def load_config(path):
         return json.load(f)
 
 
+def update_epss(db, limit=600):
+    """Look up exploitation probability for recent CVEs we have not scored today.
+
+    EPSS (from FIRST.org) estimates the chance a CVE is exploited in the next
+    30 days. It is the best free signal for "which of these matters", since
+    most high-CVSS bugs are never attacked.
+    """
+    since = iso(utcnow() - dt.timedelta(days=14))
+    stale = iso(utcnow() - dt.timedelta(hours=20))
+    fresh = {r[0] for r in db.execute("SELECT cve FROM epss WHERE checked_at > ?", (stale,))}
+    wanted = []
+    for (cves,) in db.execute("SELECT cves FROM items WHERE cves != '' AND published > ? "
+                              "ORDER BY published DESC", (since,)):
+        for c in cves.split(","):
+            if c not in fresh and c not in wanted:
+                wanted.append(c)
+    wanted = wanted[:limit]
+    now, found = iso(utcnow()), 0
+    for i in range(0, len(wanted), 50):
+        batch = wanted[i:i + 50]
+        scores = parse_epss(http_json("https://api.first.org/data/v1/epss?cve=" + ",".join(batch)))
+        for c in batch:  # record misses too, so brand-new CVEs are retried tomorrow, not every run
+            score, pct = scores.get(c, (None, None))
+            found += score is not None
+            db.execute("INSERT OR REPLACE INTO epss VALUES (?,?,?,?)", (c, score, pct, now))
+    return found
+
+
+def alert_matches(item, alerts):
+    """Why this item deserves a push notification, or None."""
+    if alerts.get("kev", True) and "kev" in item["tags"]:
+        return "Known exploited"
+    if alerts.get("exploited", False) and "exploited" in item["tags"]:
+        return "Exploited"
+    text = (item["title"] + " " + item["summary"]).lower()
+    for word in alerts.get("keywords") or []:
+        if word.lower() in text:
+            return "Watchlist: " + word
+    return None
+
+
+def send_alerts(items, alerts, post=None):
+    """Push new matching items to ntfy, Discord or Slack. Returns how many matched."""
+    post = post or http_post
+    url = os.environ.get("SECFEED_ALERT_URL") or alerts.get("url")
+    hits = [(why, i) for i in items for why in [alert_matches(i, alerts)] if why]
+    if not url or not hits:
+        return len(hits)
+    cap = alerts.get("max_per_refresh", 8)
+    for why, i in hits[:cap]:
+        text = "%s\n%s\n%s" % (why, i["title"], i["url"])
+        if "discord.com/api/webhooks" in url:
+            post(url, json.dumps({"content": text}).encode(),
+                 {"Content-Type": "application/json"})
+        elif "hooks.slack.com" in url:
+            post(url, json.dumps({"text": text}).encode(),
+                 {"Content-Type": "application/json"})
+        else:  # ntfy: plain-text body, metadata in headers
+            post(url, ("%s\n%s" % (i["title"], i["url"])).encode(),
+                 {"Title": "secfeed: " + why.encode("ascii", "ignore").decode(),
+                  "Click": urllib.parse.quote(i["url"], safe=":/?&=#%+@,;~"),
+                  "Tags": "rotating_light" if "xploited" in why else "eyes"})
+    if len(hits) > cap:
+        more = "secfeed: %d more new alerts, open the reader" % (len(hits) - cap)
+        if "discord.com/api/webhooks" in url:
+            post(url, json.dumps({"content": more}).encode(), {"Content-Type": "application/json"})
+        elif "hooks.slack.com" in url:
+            post(url, json.dumps({"text": more}).encode(), {"Content-Type": "application/json"})
+        else:
+            post(url, more.encode(), {"Title": "secfeed"})
+    return len(hits)
+
+
 def refresh(db, config, log=print):
     """Fetch every enabled source in parallel; store what came back."""
     sources = [s for s in config["sources"] if s.get("enabled", True)]
@@ -598,9 +721,15 @@ def refresh(db, config, log=print):
             return src, "error", "%s: %s" % (type(e).__name__, e), {}
 
     total = 0
+    # Alerts fire only for items never seen before, and never on the very
+    # first run, when everything is "new" and would flood your phone.
+    known = {r[0] for r in db.execute("SELECT id FROM items")}
+    first_run, fresh = not known, []
     with concurrent.futures.ThreadPoolExecutor(max_workers=8) as pool:
         for src, state, detail, result in pool.map(run, sources):
             items = result.get("items", [])
+            fresh += [i for i in items if i["id"] not in known]
+            known.update(i["id"] for i in items)
             store_items(db, items)
             if "kev" in result:
                 db.execute("DELETE FROM kev")
@@ -611,9 +740,27 @@ def refresh(db, config, log=print):
             total += len(items)
             log("  %-8s %-28s %s" % (state, src["name"],
                                      detail or "%d items" % len(items)))
+    extras = []
+    if config.get("epss", True):
+        extras.append(("EPSS scores", "epss", lambda: "%d CVEs scored" % update_epss(db)))
+    alerts = config.get("alerts") or {}
+    if alerts.get("enabled", True) and not first_run:
+        extras.append(("Alerts", "alerts", lambda: "%d sent" % send_alerts(fresh, alerts)
+                       if os.environ.get("SECFEED_ALERT_URL") or alerts.get("url")
+                       else "off: set SECFEED_ALERT_URL to get push alerts"))
+    for name, kind, job in extras:
+        try:
+            state, detail = "ok", job()
+        except Exception as e:
+            state, detail = "error", "%s: %s" % (type(e).__name__, e)
+        if detail.startswith("off:"):
+            state = "skipped"
+        db.execute("INSERT OR REPLACE INTO source_status VALUES (?,?,?,?,?,?)",
+                   (name, kind, state, detail, 0, iso(utcnow())))
+        log("  %-8s %-28s %s" % (state, name, detail))
     cutoff = iso(utcnow() - dt.timedelta(days=config.get("retention_days", 30)))
     db.execute("DELETE FROM items WHERE published < ?", (cutoff,))
-    names = [s["name"] for s in config["sources"]]
+    names = [s["name"] for s in config["sources"]] + [e[0] for e in extras]
     db.execute("DELETE FROM source_status WHERE name NOT IN (%s)" %
                ",".join("?" * len(names)), names)
     db.commit()
@@ -623,6 +770,8 @@ def refresh(db, config, log=print):
 def export(db, limit=3000):
     """The one payload the reader needs; also what `build` writes to data.json."""
     kev = {r[0] for r in db.execute("SELECT cve FROM kev")}
+    epss = {r[0]: (r[1], r[2]) for r in
+            db.execute("SELECT cve, score, percentile FROM epss WHERE score IS NOT NULL")}
     items = []
     for r in db.execute("SELECT * FROM items ORDER BY published DESC LIMIT ?", (limit,)):
         cves = [c for c in r["cves"].split(",") if c]
@@ -635,6 +784,9 @@ def export(db, limit=3000):
             "published": r["published"], "severity": r["severity"],
             "cves": cves, "tags": tags,
             "details": json.loads(r["details"] or "{}"),
+            # Highest exploitation probability among the CVEs this item mentions.
+            "epss": max((epss[c] for c in cves if c in epss), default=(None, None))[0],
+            "epss_pct": max((epss[c] for c in cves if c in epss), default=(None, None))[1],
         })
     sources = [dict(r) for r in db.execute("SELECT * FROM source_status ORDER BY name")]
     return {"generated_at": iso(utcnow()), "items": items, "sources": sources}

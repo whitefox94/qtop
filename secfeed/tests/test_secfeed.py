@@ -149,6 +149,43 @@ class Parsers(unittest.TestCase):
         self.assertIn("ai", t["tags"])
         self.assertEqual(t["published"], "2026-11-25T00:00:00Z")
 
+    def test_github_releases_skip_prereleases(self):
+        items = sf.parse_github_releases([
+            {"tag_name": "v3.4.0", "name": "v3.4.0", "html_url": "https://github.com/o/tool/releases/tag/v3.4.0",
+             "body": "## Changes\n* fix", "published_at": "2026-11-20T00:00:00Z"},
+            {"tag_name": "v3.5.0-rc1", "prerelease": True,
+             "html_url": "https://github.com/o/tool/releases/tag/v3.5.0-rc1",
+             "published_at": "2026-11-21T00:00:00Z"}], "o/tool", "Tool releases", "tools")
+        self.assertEqual([i["title"] for i in items], ["tool v3.4.0"])
+        self.assertIn("release", items[0]["tags"])
+
+    def test_epss(self):
+        got = sf.parse_epss({"data": [
+            {"cve": "CVE-2024-3094", "epss": "0.308320000", "percentile": "0.986600000"},
+            {"cve": "CVE-2000-0001", "epss": "n/a", "percentile": "0"}]})
+        self.assertEqual(got, {"CVE-2024-3094": (0.30832, 0.9866)})
+
+    def test_alerts_match_and_format(self):
+        kev = sf.make_item("CISA KEV", "cve", "CVE-2026-0001 — Foo", "https://e.com/k", tags=["kev"])
+        hit = sf.make_item("News", "news", "Fortinet patches FortiOS", "https://e.com/f")
+        miss = sf.make_item("News", "news", "Unrelated", "https://e.com/u")
+        cfg = {"kev": True, "keywords": ["fortinet"], "max_per_refresh": 1}
+        self.assertEqual(sf.alert_matches(kev, cfg), "Known exploited")
+        self.assertEqual(sf.alert_matches(hit, cfg), "Watchlist: fortinet")
+        self.assertIsNone(sf.alert_matches(miss, cfg))
+        sent = []
+        os.environ.pop("SECFEED_ALERT_URL", None)
+        n = sf.send_alerts([kev, hit, miss], dict(cfg, url="https://ntfy.sh/t"),
+                           post=lambda u, b, h: sent.append((u, b, h)))
+        self.assertEqual(n, 2)
+        self.assertEqual(len(sent), 2, "one alert plus one overflow notice")
+        self.assertEqual(sent[0][2]["Click"], "https://e.com/k")
+        self.assertIn(b"1 more", sent[1][1])
+        sent.clear()
+        sf.send_alerts([kev], dict(cfg, url="https://discord.com/api/webhooks/1/x"),
+                       post=lambda u, b, h: sent.append((u, b, h)))
+        self.assertIn("CVE-2026-0001", __import__("json").loads(sent[0][1])["content"])
+
     def test_future_dates_are_clamped(self):
         i = sf.make_item("s", "news", "t", "https://e.com/x",
                          published=sf.utcnow() + dt.timedelta(days=400))
@@ -173,7 +210,7 @@ class Storage(unittest.TestCase):
         sf.FETCHERS.update(good=good, bad=bad)
         try:
             db = sf.open_db(":memory:")
-            cfg = {"retention_days": 30, "sources": [
+            cfg = {"retention_days": 30, "epss": False, "alerts": {"enabled": False}, "sources": [
                 {"type": "good", "name": "News"}, {"type": "bad", "name": "Broken"},
                 {"type": "x", "name": "X", "query": "q"},
                 {"type": "good", "name": "Off", "enabled": False}]}

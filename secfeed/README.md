@@ -31,12 +31,48 @@ python3 -m unittest discover -s tests
 
 ## What it reads
 
-| Tab | Sources | Needs |
+| Tab | What it shows | Sources |
 | --- | --- | --- |
-| CVEs | NVD (CVSS 7.0+ by default), CISA Known Exploited Vulnerabilities, GitHub Advisories, new GitHub repos named after a CVE (PoCs) | nothing |
-| News | The Hacker News, BleepingComputer, Krebs, SANS ISC, Schneier, SecurityWeek, The Record, Dark Reading | nothing |
-| AI security | Simon Willison's prompt-injection posts, Embrace The Red, arXiv (prompt injection, LLM jailbreak), Hacker News, new GitHub repos | nothing |
-| Social | X recent search, Threads keyword search | API tokens, see below |
+| Priority | Recent CVEs ranked by how likely they are to hurt | computed, see below |
+| CVEs | New vulnerabilities | NVD (CVSS 7.0+), CISA KEV, GitHub Advisories, ZDI advisories, oss-security |
+| Exploited | Anything seen or reported in real attacks | CISA KEV plus keyword matches in every feed |
+| Exploits | Public exploit code and disclosures | Exploit-DB, Full Disclosure, new GitHub repos named after a CVE |
+| News | Security news and breaches | The Hacker News, BleepingComputer, Krebs, SANS ISC, Schneier, SecurityWeek, The Record, Dark Reading, Have I Been Pwned |
+| Research | Technique and threat write-ups | PortSwigger Research, watchTowr Labs, ZDI blog, Unit 42, Cisco Talos, The DFIR Report, Trail of Bits, Rapid7 |
+| AI security | Prompt injection, jailbreaks, agent attacks | Simon Willison, Embrace The Red, arXiv, Hacker News, GitHub, plus AI stories from every other feed |
+| Tools | New releases of testing tools | GitHub releases of nuclei, nuclei-templates, Metasploit, sqlmap, ffuf, Impacket, BloodHound, ZAP, Ghidra, hashcat |
+| Practice | Legal hands-on practice | CTFtime upcoming CTFs, InfoSec Write-ups |
+| Social | Posts | X and Threads, with API tokens (see below) |
+| Saved | Items you starred | kept in your browser, outlives the 30-day history |
+
+### Priority ranking
+
+Most high-severity CVEs are never attacked, so severity alone is a poor guide.
+The Priority tab ranks CVEs from the last 14 days by evidence of real risk, and
+each item's detail view says why it ranks:
+
+- it is on CISA's Known Exploited Vulnerabilities list, or reported as exploited;
+- exploit code for it is public somewhere in the feed (items get an "EXPLOIT PUBLIC" badge);
+- its EPSS score, the published estimate of the chance it is exploited in the next 30 days;
+- its CVSS severity;
+- it matches your watchlist.
+
+### Push alerts
+
+The server can notify your phone when something new and urgent arrives. The
+simplest route is [ntfy](https://ntfy.sh): install the app, subscribe to a
+topic name only you know, and start the server with
+
+```sh
+SECFEED_ALERT_URL=https://ntfy.sh/your-secret-topic python3 secfeed.py serve
+```
+
+Discord and Slack webhook URLs work too. By default it alerts on new CISA KEV
+entries; add vendors or products you run to `alerts.keywords` in
+`sources.json` to be told about anything mentioning them. Alerts are sent only
+for items the server has not seen before, never on its first run, and are
+capped per refresh. Anyone who knows an ntfy topic name can read it, so pick
+an unguessable one.
 
 Tap any item to open its detail view: the link, a plain-language explanation
 (how it can be attacked, what an attacker gains, what to do), the full
@@ -61,6 +97,7 @@ Set these as environment variables before running. None are stored on disk.
 | `GITHUB_TOKEN` | Raises GitHub's rate limit (unauthenticated search allows 10 requests a minute, which is enough for the defaults). |
 | `NVD_API_KEY` | Raises NVD's rate limit. Free from nvd.nist.gov. |
 | `X_BEARER_TOKEN` | Enables the X source. X's API is paid; without the token the source is skipped. |
+| `SECFEED_ALERT_URL` | Turns on push alerts (ntfy topic URL, or a Discord or Slack webhook). |
 | `THREADS_ACCESS_TOKEN` | Enables the Threads sources. Needs a Meta developer app with the `threads_keyword_search` permission. |
 
 There is no free, sanctioned way to read X or Threads, and scraping them
@@ -71,8 +108,9 @@ response shapes only; they have not been run against the live APIs.
 ## Changing sources
 
 Edit `sources.json`. Each entry has a `type` (`rss`, `nvd`, `kev`, `ghsa`,
-`github_search`, `hn`, `x`, `threads`), a `name`, and a `category` (`cve`,
-`news`, `ai`, `social`). Adding a blog is one line:
+`github_search`, `github_releases`, `hn`, `x`, `threads`), a `name`, and a
+`category` (`cve`, `exploit`, `news`, `research`, `ai`, `tools`, `learn`,
+`social`). Adding a blog is one line:
 
 ```json
 {"type": "rss", "name": "Some Blog", "category": "news", "url": "https://example.com/feed.xml"}
@@ -82,6 +120,14 @@ Set `"enabled": false` to switch a source off. For NVD, `min_severity` sets
 the CVSS floor (NVD publishes several hundred CVEs a day; CVEs about AI tooling
 are kept whatever their score). The Sources panel at the bottom of the reader
 shows each source's last result, including why one failed.
+
+## Use it responsibly
+
+The feed lists public exploit code and attack techniques so you can patch,
+detect and test. Only test systems you own or have written permission to
+test. Treat proof-of-concept repositories from unknown authors as hostile:
+read the code and run it only in an isolated lab, because fake PoCs that
+carry malware are common.
 
 ## Safety notes
 

@@ -90,6 +90,14 @@ article p { margin: 0; color: var(--muted); font-size: 13.5px; overflow-wrap: an
 .pill.med { color: var(--med); } .pill.low { color: var(--low); }
 .pill.kev { color: var(--kev); } .pill.ai { color: var(--ai); }
 .pill.tag { color: var(--muted); font-weight: 600; }
+.pill.hot { color: var(--crit); }
+article.read h2 a { color: var(--muted); }
+.star { margin-left: auto; border: 0; background: none; padding: 0 2px; font-size: 17px; line-height: 1; color: var(--muted); }
+.star[aria-pressed=true] { color: var(--med); }
+.note { color: var(--muted); font-size: 12.5px; margin: 0 0 10px; }
+.d-links { display: flex; gap: 6px 14px; flex-wrap: wrap; font-size: 13.5px; }
+.d-links a { color: var(--accent); }
+footer { color: var(--muted); font-size: 12.5px; margin-top: 18px; }
 .empty { text-align: center; color: var(--muted); padding: 40px 0; }
 details { margin-top: 24px; color: var(--muted); font-size: 13px; }
 details table { width: 100%; border-collapse: collapse; margin-top: 8px; }
@@ -155,12 +163,15 @@ dialog::backdrop { background: rgba(0, 0, 0, 0.55); }
 </header>
 <main>
   <div class="wrap">
+    <p class="note" id="note" hidden></p>
     <div id="list"></div>
     <button id="more" hidden>Show more</button>
     <details>
       <summary>Sources</summary>
       <table id="sources"></table>
     </details>
+    <footer>Exploit code and techniques listed here are for defending and for authorised testing.
+      Only test systems you own or have written permission to test.</footer>
   </div>
 </main>
 <dialog id="detail" aria-label="Item details">
@@ -172,13 +183,26 @@ dialog::backdrop { background: rgba(0, 0, 0, 0.55); }
 // Everything from feeds is inserted with textContent, never innerHTML, so a
 // hostile feed entry cannot inject markup or script into this page.
 
+// [id, label, filter, options]. `sort` reorders; `list` swaps the item pool.
+const DAY = 86400e3;
 const TABS = [
   ["all", "All", () => true],
+  ["priority", "Priority", i => i._score > 0 && Date.now() - new Date(i.published) < 14 * DAY,
+    { sort: (a, b) => b._score - a._score, max: 100,
+      note: "CVEs from the last 14 days, ranked by how likely they are to hurt: seen in real attacks, public exploit code, exploitation probability (EPSS), severity, and your watchlist." }],
   ["cve", "CVEs", i => i.category === "cve"],
   ["exploited", "Exploited", i => i.tags.includes("kev") || i.tags.includes("exploited")],
+  ["exploit", "Exploits", i => i.category === "exploit" || i.tags.includes("poc"),
+    { note: "Public exploit code and disclosures. Knowing what attackers can already download tells you what to patch and test first." }],
   ["news", "News", i => i.category === "news"],
+  ["research", "Research", i => i.category === "research",
+    { note: "Write-ups from the teams that find and analyse attacks. This is where new techniques appear before they become common." }],
   ["ai", "AI security", i => i.tags.includes("ai")],
+  ["tools", "Tools", i => i.category === "tools"],
+  ["learn", "Practice", i => i.category === "learn",
+    { note: "Upcoming capture-the-flag competitions and bug bounty write-ups, for legal hands-on practice." }],
   ["social", "Social", i => i.category === "social"],
+  ["saved", "Saved", () => true, { list: () => saved }],
   ["watch", "Watchlist", i => i._watch],
 ];
 const PAGE = 60;
@@ -190,6 +214,27 @@ const store = {
   set(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch {} },
 };
 let watch = store.get("secfeed.watch", []);
+// Saved items are stored whole, so they outlive the feed's 30-day history.
+let saved = store.get("secfeed.saved", []);
+let read = new Set(store.get("secfeed.read", []));
+const isSaved = i => saved.some(s => s.id === i.id);
+function toggleSave(i) {
+  if (isSaved(i)) saved = saved.filter(s => s.id !== i.id);
+  else {
+    const { _text, _watch, _score, _why, _exploit, ...plain } = i;
+    saved = [plain, ...saved].slice(0, 300);
+  }
+  store.set("secfeed.saved", saved);
+  markWatch(); render();
+}
+function starButton(i) {
+  const on = isSaved(i), b = el("button", "star", on ? "★" : "☆");
+  b.setAttribute("aria-pressed", on);
+  b.setAttribute("aria-label", on ? "Remove from saved" : "Save");
+  b.title = on ? "Remove from saved" : "Save for later";
+  b.onclick = e => { e.stopPropagation(); toggleSave(i); if ($("detail").open) openDetail(i); };
+  return b;
+}
 state.tab = store.get("secfeed.tab", "all");
 
 function el(tag, cls, text) {
@@ -210,25 +255,46 @@ function sevClass(s) { return s >= 9 ? "crit" : s >= 7 ? "high" : s >= 4 ? "med"
 
 function markWatch() {
   const words = watch.map(w => w.toLowerCase()).filter(Boolean);
-  for (const i of state.items) {
+  // Which CVEs have public exploit code somewhere in the feed?
+  const exploit = new Set();
+  for (const i of state.items)
+    if (i.category === "exploit" || i.tags.includes("poc")) for (const c of i.cves) exploit.add(c);
+  for (const i of [...state.items, ...saved]) {
     i._text = (i.title + " " + i.summary + " " + i.cves.join(" ") + " " + i.source).toLowerCase();
     i._watch = words.some(w => i._text.includes(w));
+    const isExploit = i.category === "exploit" || i.tags.includes("poc");
+    i._exploit = !isExploit && i.cves.some(c => exploit.has(c));
+    // Priority: why this needs attention first. Only vulnerabilities are ranked.
+    const why = [];
+    let score = 0;
+    if (i.category === "cve" && !isExploit) {
+      if (i.tags.includes("kev")) { score += 100; why.push("seen in real attacks (CISA)"); }
+      else if (i.tags.includes("exploited")) { score += 45; why.push("reported as exploited"); }
+      if (i._exploit) { score += 30; why.push("exploit code is public"); }
+      if (i.epss != null) { score += i.epss * 60; if (i.epss >= 0.05) why.push(Math.round(i.epss * 100) + "% exploitation probability"); }
+      if (i.severity != null) { score += i.severity * 3; if (i.severity >= 9) why.push("critical severity"); }
+      if (i._watch) { score += 25; why.push("matches your watchlist"); }
+      if (!why.length) score = 0;  // nothing but a middling score: not a priority
+    }
+    i._score = score; i._why = why;
   }
 }
 
-function filtered(tabFn) {
-  const q = state.q.trim().toLowerCase();
-  return state.items.filter(i =>
-    tabFn(i) &&
+function filtered(tab) {
+  const q = state.q.trim().toLowerCase(), opt = tab[3] || {};
+  let rows = (opt.list ? opt.list() : state.items).filter(i =>
+    tab[2](i) &&
     (!q || i._text.includes(q)) &&
     (!state.src || i.source === state.src) &&
     // Severity filter only hides items that have a score below the bar;
     // news stories and unscored fresh CVEs are hidden too, since you asked for "at least".
     (!state.sev || (i.severity != null && i.severity >= state.sev)));
+  if (opt.sort) rows = [...rows].sort(opt.sort);
+  return opt.max ? rows.slice(0, opt.max) : rows;
 }
 
 function card(i) {
-  const a = el("article", (i._watch ? "watch " : "") + (i.tags.includes("kev") ? "kev" : ""));
+  const a = el("article", (i._watch ? "watch " : "") + (i.tags.includes("kev") ? "kev " : "") + (read.has(i.id) ? "read" : ""));
   // A tap opens the detail view. Ctrl/Cmd/middle-click on the title still
   // opens the original in a new tab, because the link keeps its real href.
   a.onclick = e => {
@@ -237,6 +303,7 @@ function card(i) {
     openDetail(i);
   };
   const meta = metaRow(i);
+  meta.append(starButton(i));
   const h = el("h2");
   const link = el("a", null, i.title);
   if (/^https?:\/\//i.test(i.url)) link.href = i.url;
@@ -263,7 +330,9 @@ function metaRow(i) {
   if (i.tags.includes("kev")) meta.append(el("span", "pill kev", "KNOWN EXPLOITED"));
   else if (i.tags.includes("exploited")) meta.append(el("span", "pill kev", "EXPLOITED"));
   if (i.tags.includes("ai") && i.category !== "ai") meta.append(el("span", "pill ai", "AI"));
-  for (const t of ["poc", "paper", "ransomware"]) if (i.tags.includes(t)) meta.append(el("span", "pill tag", t.toUpperCase()));
+  if (i._exploit) meta.append(el("span", "pill hot", "EXPLOIT PUBLIC"));
+  if (i.epss != null && i.epss >= 0.05) meta.append(el("span", "pill " + (i.epss >= 0.3 ? "hot" : "tag"), "EPSS " + Math.round(i.epss * 100) + "%"));
+  for (const t of ["poc", "paper", "ransomware", "ctf", "breach", "release"]) if (i.tags.includes(t)) meta.append(el("span", "pill tag", t.toUpperCase()));
   return meta;
 }
 
@@ -319,6 +388,9 @@ function explain(i) {
   } else if (i.tags.includes("exploited")) {
     add("Reported as exploited.", "This item says attackers are already using it, or calls it a zero-day (attacked before a fix existed).");
   }
+  if (i._exploit) add("Exploit code is public.", "Working or proof-of-concept attack code for this is listed in your feed (see the related items below), so less-skilled attackers can use it too.");
+  if (i.epss != null) add(Math.round(i.epss * 1000) / 10 + "% chance of exploitation in the next 30 days.",
+    "That is the EPSS estimate, which predicts real-world attacks from past patterns" + (i.epss_pct != null ? "; it is higher than " + Math.floor(i.epss_pct * 100) + "% of all known CVEs." : "."));
   if (i.tags.includes("ransomware")) add("Used by ransomware groups.", "CISA has linked it to ransomware campaigns.");
   if (i.severity != null) {
     const s = i.severity, n = s.toFixed(1) + " out of 10";
@@ -349,6 +421,9 @@ function explain(i) {
   if (impact.length) add("If it succeeds:", "the attacker can " + impact.join(", ").replace(/, ([^,]*)$/, " and $1") + ".");
   for (const c of d.cwes || []) if (CWE[c]) add("Type of flaw: " + CWE[c][0] + ".", CWE[c][1]);
   if (i.tags.includes("poc")) add("Exploit code is public.", "A proof-of-concept is on GitHub, which makes attacks easier. Treat code from unknown repos as untrusted: fake PoCs that carry malware are common.");
+  if (i.tags.includes("ctf")) add("Capture-the-flag competition.", "A legal place to practise attack skills against targets built for it.");
+  if (i.tags.includes("breach")) add("Data breach.", "Accounts from this service were exposed. If you or your users had accounts there, change those passwords and anywhere they were reused.");
+  if (i.tags.includes("release")) add("New tool version.", "Read the changes before updating; new detection templates and modules show what attackers can now automate.");
   if (i.tags.includes("paper")) add("Academic paper.", "It describes research, which may not match attacks seen in practice yet.");
   if (i.category === "social") add("Social post.", "Unverified until a vendor or known researcher confirms it.");
   if (i.tags.includes("ai") && !out.length) add("About AI systems.", "It concerns attacks on, or security of, AI models and the tools built on them.");
@@ -372,6 +447,11 @@ function openDetail(i) {
   const d = i.details || {}, body = $("d-body");
   $("d-meta").replaceWith(Object.assign(metaRow(i), { id: "d-meta" }));
   body.replaceChildren(el("h2", null, i.title));
+  if (!read.has(i.id)) {
+    read.add(i.id);
+    store.set("secfeed.read", [...read].slice(-3000));
+    render();
+  }
 
   const actions = el("div", "d-actions");
   const open = el("a", "d-open", "Open original ↗");
@@ -382,9 +462,12 @@ function openDetail(i) {
     try { await navigator.clipboard.writeText(i.url); copy.textContent = "Copied"; }
     catch { copy.textContent = "Select the link below to copy"; }
   };
-  actions.append(open, copy);
+  const save = el("button", null, isSaved(i) ? "★ Saved" : "☆ Save");
+  save.onclick = () => { toggleSave(i); openDetail(i); };
+  actions.append(open, copy, save);
   body.append(actions, el("div", "d-url", i.url));
 
+  if (i._why && i._why.length) body.append(section("Why it ranks high", el("p", null, i._why.join(" · "))));
   const { out, todo } = explain(i);
   if (out.length) {
     const ul = el("ul");
@@ -423,6 +506,25 @@ function openDetail(i) {
     body.append(section("References", ul));
   }
 
+  if (i.cves.length) {
+    // One-tap lookups for the usual next questions: is there an exploit, a
+    // scanner template, an analysis?
+    const c = i.cves[0], q = encodeURIComponent(c), box = el("div", "d-links");
+    for (const [label, url] of [
+      ["NVD", "https://nvd.nist.gov/vuln/detail/" + q],
+      ["CVE.org", "https://www.cve.org/CVERecord?id=" + q],
+      ["Exploit-DB", "https://www.exploit-db.com/search?cve=" + q.replace(/^CVE-/i, "")],
+      ["GitHub repos", "https://github.com/search?type=repositories&q=" + q],
+      ["Nuclei templates", "https://github.com/projectdiscovery/nuclei-templates/search?q=" + q],
+      ["AttackerKB", "https://attackerkb.com/search?q=" + q],
+    ]) {
+      const a = el("a", null, label);
+      a.href = url; a.target = "_blank"; a.rel = "noopener noreferrer";
+      box.append(a);
+    }
+    body.append(section("Look up " + c, box));
+  }
+
   const related = state.items.filter(o => o !== i && o.cves.some(c => i.cves.includes(c))).slice(0, 8);
   if (related.length) {
     const box = el("div", "d-related");
@@ -442,18 +544,22 @@ function openDetail(i) {
 function render() {
   const tabs = $("tabs");
   tabs.replaceChildren();
-  for (const [id, label, fn] of TABS) {
+  for (const t of TABS) {
+    const [id, label] = t;
     if (id === "watch" && !watch.length) continue;
+    if (id === "saved" && !saved.length) continue;
     const b = el("button", null, label);
     b.setAttribute("role", "tab");
     b.setAttribute("aria-selected", id === state.tab);
-    b.append(el("span", "n", String(filtered(fn).length)));
+    b.append(el("span", "n", String(filtered(t).length)));
     b.onclick = () => setTab(id);
     tabs.append(b);
   }
   const tab = TABS.find(t => t[0] === state.tab) || TABS[0];
-  const rows = filtered(tab[2]);
+  const rows = filtered(tab);
   const list = $("list");
+  const note = (tab[3] || {}).note;
+  $("note").hidden = !note; $("note").textContent = note || "";
   list.replaceChildren(...rows.slice(0, state.shown).map(card));
   if (!rows.length) {
     list.append(el("div", "empty", state.items.length
