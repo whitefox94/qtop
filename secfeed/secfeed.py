@@ -129,6 +129,34 @@ def classify(text, cwes=()):
     return areas or ["Other"], attacks or ["Other"]
 
 
+# Which AI model, vendor or tool an AI-security item is about. Independent of
+# the vulnerability categories above; an item can name several.
+AI_MODELS = [
+    ("ChatGPT / OpenAI", r"openai|chat ?gpt|\bgpt-?[0-9o]|\bgpt\b|codex|dall-?e|\bsora\b|whisper"),
+    ("Claude / Anthropic", r"anthropic|\bclaude\b"),
+    ("Gemini / Google", r"\bgemini\b|google deepmind|deepmind|\bbard\b|vertex ai|\bgemma\b"),
+    ("Copilot / Microsoft", r"copilot|microsoft ai|azure openai|\bcopilot\b"),
+    ("Llama / Meta", r"\bllama\b|meta ai"),
+    ("Grok / xAI", r"\bgrok\b|\bxai\b"),
+    ("Mistral", r"mistral|mixtral"),
+    ("DeepSeek", r"deepseek"),
+    ("Other models", r"perplexity|\bqwen\b|\bphi-?[0-9]|command ?r|cohere|stable ?diffusion|midjourney"),
+    ("Coding agents", r"\bcursor\b|windsurf|github copilot|\bcline\b|\baider\b|replit|\bdevin\b|"
+                      r"code (assistant|agent)|claude code|amazon q"),
+    ("Agents & MCP", r"\bmcp\b|model context protocol|\bagentic\b|\bai agents?\b|tool[- ]use|"
+                     r"langchain|llama ?index|autogpt|crew ?ai|function calling"),
+    ("RAG & embeddings", r"\brag\b|retrieval[- ]augmented|vector (db|database|store)|embeddings?|"
+                         r"pinecone|chroma|weaviate|qdrant|\bfaiss\b"),
+    ("Local & open models", r"ollama|llama\.cpp|\bgguf\b|hugging ?face|local (llm|model)|\bvllm\b"),
+]
+AI_MODELS = [(n, re.compile(r, re.I)) for n, r in AI_MODELS]
+
+
+def classify_ai(text):
+    """Models / tools an AI-security item names; "General" when none stands out."""
+    return [n for n, rx in AI_MODELS if rx.search(text)][:4] or ["General"]
+
+
 # --------------------------------------------------------------------------
 # Small helpers
 # --------------------------------------------------------------------------
@@ -875,16 +903,17 @@ def export(db, limit=3000):
         if "kev" not in tags and any(c in kev for c in cves):
             tags.append("kev")  # e.g. a news story about a CVE that is in KEV
         details = json.loads(r["details"] or "{}")
-        areas = attacks = []
+        blob = " ".join([r["title"], r["summary"], details.get("description", ""),
+                         " ".join(details.get("products") or [])])
+        areas = attacks = models = []
         if r["category"] in ("cve", "exploit"):
             # Classified here, not at fetch time, so rule changes apply to
             # everything already in the database.
-            areas, attacks = classify(
-                " ".join([r["title"], r["summary"], details.get("description", ""),
-                          " ".join(details.get("products") or [])]),
-                details.get("cwes") or ())
+            areas, attacks = classify(blob, details.get("cwes") or ())
+        if "ai" in tags:
+            models = classify_ai(blob)
         items.append({
-            "areas": areas, "attacks": attacks,
+            "areas": areas, "attacks": attacks, "models": models,
             "id": r["id"], "source": r["source"], "category": r["category"],
             "title": r["title"], "url": r["url"], "summary": r["summary"],
             "published": r["published"], "severity": r["severity"],

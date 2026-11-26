@@ -63,6 +63,15 @@ from keywords in the description otherwise, so some items land in "Other" and
 a few will be misfiled. The rules are the `AREAS` and `ATTACKS` lists at the
 top of `secfeed.py` and are easy to extend.
 
+### AI model / tool
+
+On the **AI security** tab a chip row sorts items by which model or tool they
+concern: ChatGPT / OpenAI, Claude / Anthropic, Gemini / Google, Copilot /
+Microsoft, Llama / Meta, Grok / xAI, Mistral, DeepSeek, coding agents (Cursor,
+Copilot, Aider…), agents & MCP, RAG & embeddings, and local or open models.
+An item can match several, and anything that names no specific model lands in
+"General". The rules are the `AI_MODELS` list in `secfeed.py`.
+
 ### Priority ranking
 
 Most high-severity CVEs are never attacked, so severity alone is a poor guide.

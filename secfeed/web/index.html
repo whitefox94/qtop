@@ -216,7 +216,7 @@ const TABS = [
   ["watch", "Watchlist", i => i._watch],
 ];
 const PAGE = 60;
-const state = { tab: "all", q: "", sev: 0, src: "", area: "", attack: "", shown: PAGE, items: [], sources: [] };
+const state = { tab: "all", q: "", sev: 0, src: "", area: "", attack: "", model: "", shown: PAGE, items: [], sources: [] };
 const $ = id => document.getElementById(id);
 
 const store = {
@@ -290,19 +290,28 @@ function markWatch() {
   }
 }
 
-// Tabs that list vulnerabilities get the two category filters.
+// Filter-chip dimensions: [stateKey, itemField, title]. Vulnerability tabs
+// get the two CVE categories; the AI tab gets which model or tool it is about.
 const CAT_TABS = ["priority", "cve", "exploited", "exploit"];
+const DIMS = {
+  area: ["area", "areas", "What it affects"],
+  attack: ["attack", "attacks", "Kind of attack"],
+  model: ["model", "models", "AI model / tool"],
+};
+function tabDims(tab) {
+  if (CAT_TABS.includes(tab[0])) return [DIMS.area, DIMS.attack];
+  if (tab[0] === "ai") return [DIMS.model];
+  return [];
+}
 
 function filtered(tab, skip) {
   const q = state.q.trim().toLowerCase(), opt = tab[3] || {};
-  const cats = CAT_TABS.includes(tab[0]);
-  const area = cats && skip !== "area" && state.area, attack = cats && skip !== "attack" && state.attack;
+  const dims = tabDims(tab);
   let rows = (opt.list ? opt.list() : state.items).filter(i =>
     tab[2](i) &&
     (!q || i._text.includes(q)) &&
     (!state.src || i.source === state.src) &&
-    (!area || (i.areas || []).includes(area)) &&
-    (!attack || (i.attacks || []).includes(attack)) &&
+    dims.every(([key, field]) => key === skip || !state[key] || (i[field] || []).includes(state[key])) &&
     // Severity filter only hides items that have a score below the bar;
     // news stories and unscored fresh CVEs are hidden too, since you asked for "at least".
     (!state.sev || (i.severity != null && i.severity >= state.sev)));
@@ -347,7 +356,8 @@ function metaRow(i) {
   if (i.tags.includes("kev")) meta.append(el("span", "pill kev", "KNOWN EXPLOITED"));
   else if (i.tags.includes("exploited")) meta.append(el("span", "pill kev", "EXPLOITED"));
   if (i.tags.includes("ai") && i.category !== "ai") meta.append(el("span", "pill ai", "AI"));
-  const kind = [(i.areas || [])[0], (i.attacks || [])[0]].filter(c => c && c !== "Other").join(" · ");
+  const kind = [(i.areas || [])[0], (i.attacks || [])[0], (i.models || [])[0]]
+    .filter(c => c && c !== "Other" && c !== "General").join(" · ");
   if (kind) meta.append(el("span", "kind", "· " + kind));
   if (i._exploit) meta.append(el("span", "pill hot", "EXPLOIT PUBLIC"));
   if (i.epss != null && i.epss >= 0.05) meta.append(el("span", "pill " + (i.epss >= 0.3 ? "hot" : "tag"), "EPSS " + Math.round(i.epss * 100) + "%"));
@@ -508,6 +518,7 @@ function openDetail(i) {
   fact("CVE", i.cves.join(", "));
   fact("Category", (i.areas || []).join(", "));
   fact("Kind of attack", (i.attacks || []).join(", "));
+  fact("AI model / tool", (i.models || []).filter(m => m !== "General").join(", "));
   fact("Affects", (d.products || []).join(", "));
   fact("Weakness", (d.cwes || []).map(c => CWE[c] ? c + " (" + CWE[c][0] + ")" : c).join(", "));
   fact("CVSS vector", d.vector);
@@ -564,10 +575,11 @@ function openDetail(i) {
 
 function renderCats(tab) {
   const box = $("cats");
-  box.hidden = !CAT_TABS.includes(tab[0]);
+  const dims = tabDims(tab);
+  box.hidden = !dims.length;
   box.replaceChildren();
   if (box.hidden) return;
-  for (const [key, field, title] of [["area", "areas", "What it affects"], ["attack", "attacks", "Kind of attack"]]) {
+  for (const [key, field, title] of dims) {
     // Count against every other active filter, so a number is what you'd get by tapping.
     const counts = new Map();
     for (const i of filtered(tab, key)) for (const c of i[field] || []) counts.set(c, (counts.get(c) || 0) + 1);

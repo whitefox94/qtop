@@ -201,6 +201,13 @@ class Classify(unittest.TestCase):
         self.assertEqual(sf.classify("Something obscure"), (["Other"], ["Other"]))
         self.assertIn("AI & ML", sf.classify("Prompt injection in an MCP server")[0])
 
+    def test_classify_ai_model(self):
+        self.assertEqual(sf.classify_ai("New jailbreak bypasses ChatGPT and GPT-4o guardrails"),
+                         ["ChatGPT / OpenAI"])
+        self.assertEqual(sf.classify_ai("Indirect prompt injection against Claude via MCP"),
+                         ["Claude / Anthropic", "Agents & MCP"])
+        self.assertEqual(sf.classify_ai("A paper on transformer attention"), ["General"])
+
 
 class Http(unittest.TestCase):
     def test_get_retries_transient_errors_but_not_4xx(self):
