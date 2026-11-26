@@ -1,0 +1,296 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>secfeed</title>
+<style>
+:root {
+  --bg: #f6f7f9; --panel: #ffffff; --ink: #14181f; --muted: #5d6675;
+  --line: #dfe3ea; --accent: #0b6bcb; --chip: #eef1f5;
+  --crit: #b3141d; --high: #c2500a; --med: #8a6a00; --low: #3b6e2c;
+  --kev: #8e1a8e; --ai: #0a6f6a;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #0e1116; --panel: #171b22; --ink: #e6e9ee; --muted: #97a1b0;
+    --line: #2a303a; --accent: #6cb2ff; --chip: #222832;
+    --crit: #ff6b70; --high: #ff9a4d; --med: #e2c14a; --low: #86c873;
+    --kev: #e07be0; --ai: #4fd1c9;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #0e1116; --panel: #171b22; --ink: #e6e9ee; --muted: #97a1b0;
+  --line: #2a303a; --accent: #6cb2ff; --chip: #222832;
+  --crit: #ff6b70; --high: #ff9a4d; --med: #e2c14a; --low: #86c873;
+  --kev: #e07be0; --ai: #4fd1c9;
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0; background: var(--bg); color: var(--ink);
+  font: 15px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+}
+header {
+  position: sticky; top: 0; z-index: 5; background: var(--bg);
+  border-bottom: 1px solid var(--line); padding: 10px 16px 0;
+}
+.wrap { max-width: 860px; margin: 0 auto; }
+.top { display: flex; align-items: center; gap: 10px; }
+h1 { font-size: 18px; margin: 0; letter-spacing: -0.01em; }
+h1 span { color: var(--accent); }
+.status { color: var(--muted); font-size: 12px; margin-left: auto; text-align: right; }
+button, input, select {
+  font: inherit; color: var(--ink); background: var(--panel);
+  border: 1px solid var(--line); border-radius: 8px; padding: 6px 10px;
+}
+button { cursor: pointer; }
+button:hover { border-color: var(--accent); }
+.filters { display: flex; gap: 8px; margin: 10px 0; flex-wrap: wrap; }
+.filters input[type=search] { flex: 1 1 180px; min-width: 0; }
+.tabs { display: flex; gap: 2px; overflow-x: auto; scrollbar-width: none; }
+.tabs button {
+  border: 0; border-bottom: 2px solid transparent; border-radius: 0;
+  background: none; color: var(--muted); padding: 8px 12px; white-space: nowrap;
+}
+.tabs button[aria-selected=true] { color: var(--ink); border-bottom-color: var(--accent); font-weight: 600; }
+.tabs .n { font-size: 11px; color: var(--muted); margin-left: 4px; font-weight: 400; }
+main { padding: 12px 16px 60px; }
+article {
+  background: var(--panel); border: 1px solid var(--line); border-radius: 10px;
+  padding: 12px 14px; margin-bottom: 8px; border-left: 3px solid var(--line);
+}
+article.watch { border-left-color: var(--accent); }
+article.kev { border-left-color: var(--kev); }
+.meta { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; font-size: 12px; color: var(--muted); }
+article h2 { font-size: 15px; margin: 4px 0; font-weight: 600; overflow-wrap: anywhere; }
+article h2 a { color: var(--ink); text-decoration: none; }
+article h2 a:hover { color: var(--accent); text-decoration: underline; }
+article h2 a:visited { color: var(--muted); }
+article p { margin: 0; color: var(--muted); font-size: 13.5px; overflow-wrap: anywhere; }
+.chips { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 8px; }
+.chips:empty { display: none; }
+.chip {
+  font-size: 11.5px; padding: 1px 8px; border-radius: 999px; background: var(--chip);
+  border: 0; color: var(--ink); font-family: ui-monospace, Menlo, Consolas, monospace;
+}
+.pill { font-size: 11px; font-weight: 700; padding: 0 7px; border-radius: 4px; border: 1px solid currentColor; }
+.pill.crit { color: var(--crit); } .pill.high { color: var(--high); }
+.pill.med { color: var(--med); } .pill.low { color: var(--low); }
+.pill.kev { color: var(--kev); } .pill.ai { color: var(--ai); }
+.pill.tag { color: var(--muted); font-weight: 600; }
+.empty { text-align: center; color: var(--muted); padding: 40px 0; }
+details { margin-top: 24px; color: var(--muted); font-size: 13px; }
+details table { width: 100%; border-collapse: collapse; margin-top: 8px; }
+details td { padding: 4px 6px; border-top: 1px solid var(--line); vertical-align: top; overflow-wrap: anywhere; }
+.ok { color: var(--low); } .error { color: var(--crit); } .skipped { color: var(--med); }
+#more { display: block; margin: 12px auto; }
+</style>
+</head>
+<body>
+<header>
+  <div class="wrap">
+    <div class="top">
+      <h1>sec<span>feed</span></h1>
+      <div class="status" id="status">loading…</div>
+      <button id="refresh" title="Fetch all sources now">Refresh</button>
+    </div>
+    <div class="filters">
+      <input type="search" id="q" placeholder="Search titles, CVE IDs, vendors…">
+      <select id="sev" title="Minimum CVSS score (applies to items that have one)">
+        <option value="0">Any severity</option>
+        <option value="4">Medium+ (4.0)</option>
+        <option value="7">High+ (7.0)</option>
+        <option value="9">Critical (9.0)</option>
+      </select>
+      <select id="src"><option value="">All sources</option></select>
+      <button id="watchbtn" title="Keywords you care about: matches are highlighted and get their own tab">Watchlist</button>
+    </div>
+    <div class="tabs" id="tabs" role="tablist"></div>
+  </div>
+</header>
+<main>
+  <div class="wrap">
+    <div id="list"></div>
+    <button id="more" hidden>Show more</button>
+    <details>
+      <summary>Sources</summary>
+      <table id="sources"></table>
+    </details>
+  </div>
+</main>
+<script>
+"use strict";
+// Everything from feeds is inserted with textContent, never innerHTML, so a
+// hostile feed entry cannot inject markup or script into this page.
+
+const TABS = [
+  ["all", "All", () => true],
+  ["cve", "CVEs", i => i.category === "cve"],
+  ["exploited", "Exploited", i => i.tags.includes("kev") || i.tags.includes("exploited")],
+  ["news", "News", i => i.category === "news"],
+  ["ai", "AI security", i => i.tags.includes("ai")],
+  ["social", "Social", i => i.category === "social"],
+  ["watch", "Watchlist", i => i._watch],
+];
+const PAGE = 60;
+const state = { tab: "all", q: "", sev: 0, src: "", shown: PAGE, items: [], sources: [] };
+const $ = id => document.getElementById(id);
+
+const store = {
+  get(k, d) { try { return JSON.parse(localStorage.getItem(k)) ?? d; } catch { return d; } },
+  set(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch {} },
+};
+let watch = store.get("secfeed.watch", []);
+state.tab = store.get("secfeed.tab", "all");
+
+function el(tag, cls, text) {
+  const e = document.createElement(tag);
+  if (cls) e.className = cls;
+  if (text != null) e.textContent = text;
+  return e;
+}
+
+function ago(isoDate) {
+  const s = (Date.now() - new Date(isoDate)) / 1000;
+  if (s < 3600) return Math.max(1, Math.round(s / 60)) + "m ago";
+  if (s < 86400) return Math.round(s / 3600) + "h ago";
+  return Math.round(s / 86400) + "d ago";
+}
+
+function sevClass(s) { return s >= 9 ? "crit" : s >= 7 ? "high" : s >= 4 ? "med" : "low"; }
+
+function markWatch() {
+  const words = watch.map(w => w.toLowerCase()).filter(Boolean);
+  for (const i of state.items) {
+    i._text = (i.title + " " + i.summary + " " + i.cves.join(" ") + " " + i.source).toLowerCase();
+    i._watch = words.some(w => i._text.includes(w));
+  }
+}
+
+function filtered(tabFn) {
+  const q = state.q.trim().toLowerCase();
+  return state.items.filter(i =>
+    tabFn(i) &&
+    (!q || i._text.includes(q)) &&
+    (!state.src || i.source === state.src) &&
+    // Severity filter only hides items that have a score below the bar;
+    // news stories and unscored fresh CVEs are hidden too, since you asked for "at least".
+    (!state.sev || (i.severity != null && i.severity >= state.sev)));
+}
+
+function card(i) {
+  const a = el("article", (i._watch ? "watch " : "") + (i.tags.includes("kev") ? "kev" : ""));
+  const meta = el("div", "meta");
+  meta.append(el("span", null, i.source), el("span", null, "·"), el("span", null, ago(i.published)));
+  meta.lastChild.title = new Date(i.published).toLocaleString();
+  if (i.severity != null) meta.append(el("span", "pill " + sevClass(i.severity), "CVSS " + i.severity.toFixed(1)));
+  if (i.tags.includes("kev")) meta.append(el("span", "pill kev", "KNOWN EXPLOITED"));
+  else if (i.tags.includes("exploited")) meta.append(el("span", "pill kev", "EXPLOITED"));
+  if (i.tags.includes("ai") && i.category !== "ai") meta.append(el("span", "pill ai", "AI"));
+  for (const t of ["poc", "paper", "ransomware"]) if (i.tags.includes(t)) meta.append(el("span", "pill tag", t.toUpperCase()));
+  const h = el("h2");
+  const link = el("a", null, i.title);
+  if (/^https?:\/\//i.test(i.url)) link.href = i.url;
+  link.target = "_blank"; link.rel = "noopener noreferrer";
+  h.append(link);
+  a.append(meta, h);
+  if (i.summary) a.append(el("p", null, i.summary));
+  const chips = el("div", "chips");
+  for (const c of i.cves.slice(0, 8)) {
+    const b = el("button", "chip", c);
+    b.title = "Show everything mentioning " + c;
+    b.onclick = () => { $("q").value = state.q = c; state.shown = PAGE; setTab("all"); };
+    chips.append(b);
+  }
+  a.append(chips);
+  return a;
+}
+
+function render() {
+  const tabs = $("tabs");
+  tabs.replaceChildren();
+  for (const [id, label, fn] of TABS) {
+    if (id === "watch" && !watch.length) continue;
+    const b = el("button", null, label);
+    b.setAttribute("role", "tab");
+    b.setAttribute("aria-selected", id === state.tab);
+    b.append(el("span", "n", String(filtered(fn).length)));
+    b.onclick = () => setTab(id);
+    tabs.append(b);
+  }
+  const tab = TABS.find(t => t[0] === state.tab) || TABS[0];
+  const rows = filtered(tab[2]);
+  const list = $("list");
+  list.replaceChildren(...rows.slice(0, state.shown).map(card));
+  if (!rows.length) {
+    list.append(el("div", "empty", state.items.length
+      ? "Nothing matches these filters."
+      : "No items yet. Press Refresh, or check the Sources panel below for errors."));
+  }
+  $("more").hidden = rows.length <= state.shown;
+}
+
+function setTab(id) {
+  state.tab = id; state.shown = PAGE; store.set("secfeed.tab", id);
+  render(); window.scrollTo(0, 0);
+}
+
+function renderSources() {
+  const sel = $("src"), keep = sel.value;
+  sel.replaceChildren(new Option("All sources", ""));
+  for (const n of [...new Set(state.items.map(i => i.source))].sort()) sel.add(new Option(n, n));
+  sel.value = keep;
+  const t = $("sources");
+  t.replaceChildren();
+  for (const s of state.sources) {
+    const tr = el("tr");
+    tr.append(el("td", null, s.name), el("td", s.state, s.state),
+              el("td", null, s.detail || s.count + " items"));
+    t.append(tr);
+  }
+}
+
+async function load() {
+  try {
+    const r = await fetch("data.json", { cache: "no-store" });
+    if (!r.ok) throw new Error("HTTP " + r.status);
+    const d = await r.json();
+    state.items = d.items; state.sources = d.sources;
+    markWatch(); renderSources(); render();
+    const bad = d.sources.filter(s => s.state === "error").length;
+    $("status").textContent = d.items.length + " items · updated " + ago(d.generated_at) +
+      (bad ? " · " + bad + " source" + (bad > 1 ? "s" : "") + " failing" : "");
+  } catch (e) {
+    $("status").textContent = "could not load data: " + e.message;
+  }
+}
+
+$("q").oninput = e => { state.q = e.target.value; state.shown = PAGE; render(); };
+$("sev").onchange = e => { state.sev = +e.target.value; state.shown = PAGE; render(); };
+$("src").onchange = e => { state.src = e.target.value; state.shown = PAGE; render(); };
+$("more").onclick = () => { state.shown += PAGE; render(); };
+$("watchbtn").onclick = () => {
+  const v = prompt("Watchlist keywords, comma-separated (vendors, products, CVE IDs…):", watch.join(", "));
+  if (v == null) return;
+  watch = v.split(",").map(s => s.trim()).filter(Boolean);
+  store.set("secfeed.watch", watch);
+  if (!watch.length && state.tab === "watch") state.tab = "all";
+  markWatch(); render();
+};
+$("refresh").onclick = async () => {
+  const b = $("refresh");
+  b.disabled = true; b.textContent = "Refreshing…";
+  try {
+    // Static builds have no /refresh endpoint; then this just reloads data.json.
+    const r = await fetch("refresh", { method: "POST", headers: { "X-Secfeed": "1" } });
+    if (r.status === 202) await new Promise(res => setTimeout(res, 12000));
+  } catch {}
+  await load();
+  b.disabled = false; b.textContent = "Refresh";
+};
+
+load();
+setInterval(load, 5 * 60 * 1000);
+</script>
+</body>
+</html>

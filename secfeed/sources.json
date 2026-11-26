@@ -1,0 +1,52 @@
+{
+  "refresh_minutes": 30,
+  "retention_days": 30,
+  "sources": [
+    {"type": "nvd", "name": "NVD", "days": 2, "min_severity": 7.0},
+    {"type": "kev", "name": "CISA KEV", "days": 30},
+    {"type": "ghsa", "name": "GitHub Advisories", "limit": 50},
+
+    {"type": "github_search", "name": "GitHub PoCs", "category": "cve", "tags": ["poc"],
+     "q": "CVE-{year} in:name created:>{since}", "sort": "updated", "days": 14},
+    {"type": "github_search", "name": "GitHub AI security", "category": "ai",
+     "q": "prompt injection in:name,description,topics created:>{since}", "sort": "stars", "days": 30},
+
+    {"type": "rss", "name": "The Hacker News", "category": "news",
+     "url": "https://feeds.feedburner.com/TheHackersNews"},
+    {"type": "rss", "name": "BleepingComputer", "category": "news",
+     "url": "https://www.bleepingcomputer.com/feed/"},
+    {"type": "rss", "name": "Krebs on Security", "category": "news",
+     "url": "https://krebsonsecurity.com/feed/"},
+    {"type": "rss", "name": "SANS ISC", "category": "news",
+     "url": "https://isc.sans.edu/rssfeed_full.xml"},
+    {"type": "rss", "name": "Schneier on Security", "category": "news",
+     "url": "https://www.schneier.com/feed/atom/"},
+    {"type": "rss", "name": "SecurityWeek", "category": "news",
+     "url": "https://www.securityweek.com/feed/"},
+    {"type": "rss", "name": "The Record", "category": "news",
+     "url": "https://therecord.media/feed"},
+    {"type": "rss", "name": "Dark Reading", "category": "news",
+     "url": "https://www.darkreading.com/rss.xml"},
+
+    {"type": "rss", "name": "Simon Willison: prompt injection", "category": "ai",
+     "url": "https://simonwillison.net/tags/prompt-injection.atom"},
+    {"type": "rss", "name": "Embrace The Red", "category": "ai",
+     "url": "https://embracethered.com/blog/index.xml"},
+    {"type": "rss", "name": "arXiv: prompt injection", "category": "ai", "tags": ["paper"],
+     "url": "https://export.arxiv.org/api/query?search_query=all:%22prompt%20injection%22&sortBy=submittedDate&sortOrder=descending&max_results=25"},
+    {"type": "rss", "name": "arXiv: LLM jailbreak", "category": "ai", "tags": ["paper"],
+     "url": "https://export.arxiv.org/api/query?search_query=all:jailbreak%20AND%20all:LLM&sortBy=submittedDate&sortOrder=descending&max_results=25"},
+    {"type": "hn", "name": "HN: prompt injection", "category": "ai",
+     "query": "prompt injection", "min_points": 5},
+    {"type": "hn", "name": "HN: jailbreak", "category": "ai",
+     "query": "LLM jailbreak", "min_points": 5},
+
+    {"type": "x", "name": "X: security", "category": "social",
+     "query": "(CVE OR \"prompt injection\" OR 0day) (exploit OR PoC OR \"in the wild\") -is:retweet lang:en",
+     "limit": 25},
+    {"type": "threads", "name": "Threads: prompt injection", "category": "social",
+     "query": "prompt injection"},
+    {"type": "threads", "name": "Threads: CVE", "category": "social",
+     "query": "CVE exploit"}
+  ]
+}
