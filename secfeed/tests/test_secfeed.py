@@ -192,6 +192,41 @@ class Parsers(unittest.TestCase):
         self.assertLessEqual(sf.parse_date(i["published"]), sf.utcnow())
 
 
+class Http(unittest.TestCase):
+    def test_get_retries_transient_errors_but_not_4xx(self):
+        import urllib.error
+        calls = []
+
+        class Resp:
+            def __enter__(self): return self
+            def __exit__(self, *a): return False
+            def read(self, n): return b"ok"
+
+        def flaky(req, timeout):
+            calls.append(1)
+            if len(calls) == 1:
+                raise urllib.error.URLError("Temporary failure in name resolution")
+            return Resp()
+
+        def gone(req, timeout):
+            calls.append(1)
+            raise urllib.error.HTTPError(req.full_url, 404, "nope", {}, None)
+
+        real_open, real_sleep = sf.urllib.request.urlopen, sf.time.sleep
+        sf.time.sleep = lambda s: None
+        try:
+            sf.urllib.request.urlopen = flaky
+            self.assertEqual(sf.http_get("https://e.com/"), b"ok")
+            self.assertEqual(len(calls), 2)
+            calls.clear()
+            sf.urllib.request.urlopen = gone
+            with self.assertRaises(urllib.error.HTTPError):
+                sf.http_get("https://e.com/")
+            self.assertEqual(len(calls), 1)
+        finally:
+            sf.urllib.request.urlopen, sf.time.sleep = real_open, real_sleep
+
+
 class Storage(unittest.TestCase):
     def test_refresh_isolates_failures_and_flags_kev(self):
         recent = sf.iso(sf.utcnow() - dt.timedelta(hours=1))

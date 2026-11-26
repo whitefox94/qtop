@@ -21,10 +21,12 @@ import html
 import html.parser
 import json
 import os
+import random
 import re
 import sqlite3
 import sys
 import threading
+import time
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -34,7 +36,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 HERE = os.path.dirname(os.path.abspath(__file__))
 USER_AGENT = "secfeed/0.1 (personal feed reader)"
 MAX_BODY = 8 * 1024 * 1024  # refuse responses larger than this
-TIMEOUT = 25
+TIMEOUT = 40
 
 CVE_RE = re.compile(r"\bCVE-\d{4}-\d{4,7}\b", re.I)
 
@@ -128,10 +130,25 @@ def safe_url(url):
     return url if scheme in ("http", "https") else None
 
 
-def http_get(url, headers=None):
+def http_get(url, headers=None, retries=2):
+    """GET with retries for transient trouble (DNS hiccups, timeouts, 5xx).
+
+    A refresh starts many lookups at once, which some home routers' DNS
+    drops; a short pause and a second try is usually all it takes.
+    """
     req = urllib.request.Request(url, headers={"User-Agent": USER_AGENT, **(headers or {})})
-    with urllib.request.urlopen(req, timeout=TIMEOUT) as resp:
-        body = resp.read(MAX_BODY + 1)
+    for attempt in range(retries + 1):
+        try:
+            with urllib.request.urlopen(req, timeout=TIMEOUT) as resp:
+                body = resp.read(MAX_BODY + 1)
+            break
+        except urllib.error.HTTPError as e:
+            if e.code < 500 or attempt == retries:  # 4xx will not fix itself
+                raise
+        except (urllib.error.URLError, TimeoutError, ConnectionError):
+            if attempt == retries:
+                raise
+        time.sleep(2 + 4 * attempt + random.random() * 2)
     if len(body) > MAX_BODY:
         raise ValueError("response larger than %d bytes" % MAX_BODY)
     return body
