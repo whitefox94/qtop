@@ -530,12 +530,18 @@ def fetch_github_search(src):
 
 
 def fetch_github_releases(src):
-    items = []
+    # One request per repo; a single slow or failed one should not cost the rest.
+    items, errors = [], []
     for repo in src["repos"]:
         url = "https://api.github.com/repos/%s/releases?per_page=%d" % (
             urllib.parse.quote(repo), src.get("limit", 3))
-        items += parse_github_releases(http_json(url, _gh_headers()), repo, src["name"],
-                                       src.get("category", "tools"))
+        try:
+            items += parse_github_releases(http_json(url, _gh_headers()), repo, src["name"],
+                                           src.get("category", "tools"))
+        except Exception as e:
+            errors.append("%s: %s" % (repo, e))
+    if errors and not items:
+        raise RuntimeError("all %d repos failed, e.g. %s" % (len(errors), errors[0]))
     return {"items": items}
 
 
