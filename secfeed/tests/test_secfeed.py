@@ -42,7 +42,15 @@ NVD = {"vulnerabilities": [
              "vulnStatus": "Analyzed",
              "descriptions": [{"lang": "es", "value": "hola"},
                               {"lang": "en", "value": "Buffer overflow in Foo. More."}],
-             "metrics": {"cvssMetricV31": [{"cvssData": {"baseScore": 9.8}}]}}},
+             "metrics": {"cvssMetricV31": [{"cvssData": {
+                 "baseScore": 9.8,
+                 "vectorString": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:H"}}]},
+             "weaknesses": [{"description": [{"lang": "en", "value": "CWE-787"},
+                                             {"lang": "en", "value": "NVD-CWE-Other"}]}],
+             "configurations": [{"nodes": [{"cpeMatch": [
+                 {"vulnerable": True, "criteria": "cpe:2.3:a:foo:bar_baz:*:*:*:*:*:*:*:*"}]}]}],
+             "references": [{"url": "https://foo.example/advisory"},
+                            {"url": "javascript:alert(1)"}]}},
     {"cve": {"id": "CVE-2026-0002", "published": "2026-11-24T11:00:00.000",
              "vulnStatus": "Rejected", "descriptions": [], "metrics": {}}},
     {"cve": {"id": "CVE-2026-0003", "published": "2026-11-24T12:00:00.000",
@@ -52,7 +60,9 @@ NVD = {"vulnerabilities": [
 KEV = {"vulnerabilities": [
     {"cveID": "CVE-2026-0001", "vendorProject": "Foo", "product": "Bar",
      "vulnerabilityName": "Foo Bar Overflow", "dateAdded": "2026-11-25",
-     "shortDescription": "Bad.", "knownRansomwareCampaignUse": "Known"},
+     "shortDescription": "Bad.", "knownRansomwareCampaignUse": "Known",
+     "requiredAction": "Apply mitigations per vendor instructions.",
+     "dueDate": "2026-12-16", "notes": "https://foo.example/kb ; https://nvd.nist.gov/x"},
     {"cveID": "CVE-2019-0708", "vendorProject": "Microsoft", "product": "RDP",
      "vulnerabilityName": "BlueKeep", "dateAdded": "2021-11-03",
      "shortDescription": "Old.", "knownRansomwareCampaignUse": "Unknown"},
@@ -84,6 +94,12 @@ class Parsers(unittest.TestCase):
         self.assertIsNone(items[1]["severity"])
         self.assertEqual(items[0]["title"], "CVE-2026-0001 — Buffer overflow in Foo")
         self.assertEqual(items[0]["published"], "2026-11-24T10:15:07Z")
+        d = items[0]["details"]
+        self.assertEqual(d["vector"], "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:H")
+        self.assertEqual(d["cwes"], ["CWE-787"])
+        self.assertEqual(d["products"], ["foo bar baz"])
+        self.assertEqual(d["references"], ["https://foo.example/advisory"])
+        self.assertEqual(items[1]["details"], {"description": "Unscored issue"})
 
     def test_kev(self):
         since = dt.datetime(2026, 11, 1, tzinfo=dt.timezone.utc)
@@ -91,6 +107,8 @@ class Parsers(unittest.TestCase):
         self.assertEqual(ids, ["CVE-2026-0001", "CVE-2019-0708"])
         self.assertEqual(len(items), 1)
         self.assertLessEqual({"kev", "exploited", "ransomware"}, set(items[0]["tags"]))
+        self.assertEqual(items[0]["details"]["due_date"], "2026-12-16")
+        self.assertEqual(len(items[0]["details"]["references"]), 2)
 
     def test_ghsa(self):
         (i,) = sf.parse_ghsa([{
@@ -168,6 +186,7 @@ class Storage(unittest.TestCase):
             sf.FETCHERS.update(old)
         self.assertEqual(len(data["items"]), 1, "old item pruned, no duplicates")
         self.assertIn("kev", data["items"][0]["tags"])
+        self.assertEqual(data["items"][0]["details"], {})
         states = {s["name"]: s["state"] for s in data["sources"]}
         self.assertEqual(states, {"News": "ok", "Broken": "error", "X": "skipped"})
 

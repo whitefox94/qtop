@@ -142,7 +142,7 @@ def http_json(url, headers=None):
 
 
 def make_item(source, category, title, url, summary="", published=None,
-              severity=None, tags=()):
+              severity=None, tags=(), details=None):
     """Normalise one entry. Returns None if it has no usable link or title."""
     url = safe_url(url)
     title = clean_text(title, 300)
@@ -171,6 +171,8 @@ def make_item(source, category, title, url, summary="", published=None,
         "severity": severity,
         "cves": cves,
         "tags": sorted(tags),
+        # Extra facts for the reader's detail view; shape varies by source.
+        "details": {k: v for k, v in (details or {}).items() if v},
     }
 
 
@@ -228,6 +230,38 @@ def _nvd_score(metrics):
     return None
 
 
+def _nvd_vector(metrics):
+    for key in ("cvssMetricV40", "cvssMetricV31", "cvssMetricV30", "cvssMetricV2"):
+        for m in metrics.get(key) or []:
+            vector = (m.get("cvssData") or {}).get("vectorString")
+            if vector:
+                return vector
+    return None
+
+
+def _nvd_products(cve):
+    """'vendor product' pairs from the CPE names NVD attaches, if any yet."""
+    found = []
+    for conf in cve.get("configurations") or []:
+        for node in conf.get("nodes") or []:
+            for m in node.get("cpeMatch") or []:
+                parts = (m.get("criteria") or "").split(":")
+                if len(parts) > 4 and m.get("vulnerable", True):
+                    name = ("%s %s" % (parts[3], parts[4])).replace("_", " ")
+                    if name not in found:
+                        found.append(name)
+    return found[:6]
+
+
+def _http_urls(urls, limit=8):
+    out = []
+    for u in urls:
+        u = safe_url(u)
+        if u and u not in out:
+            out.append(u)
+    return out[:limit]
+
+
 def parse_nvd(data):
     items = []
     for v in data.get("vulnerabilities", []):
@@ -240,6 +274,15 @@ def parse_nvd(data):
         item = make_item(
             "NVD", "cve", cid, "https://nvd.nist.gov/vuln/detail/" + cid, desc,
             parse_date(cve.get("published")), _nvd_score(cve.get("metrics") or {}),
+            details={
+                "description": clean_text(desc, 2500),
+                "vector": _nvd_vector(cve.get("metrics") or {}),
+                "cwes": sorted({d.get("value") for w in cve.get("weaknesses") or []
+                                for d in w.get("description") or []
+                                if (d.get("value") or "").startswith("CWE-")}),
+                "products": _nvd_products(cve),
+                "references": _http_urls(r.get("url") for r in cve.get("references") or []),
+            },
         )
         if item:
             # Title is just the ID; put the first sentence in so it reads as news.
@@ -270,6 +313,14 @@ def parse_kev(data, since):
             "https://www.cisa.gov/known-exploited-vulnerabilities-catalog"
             "?search_api_fulltext=" + cid,
             v.get("shortDescription", ""), added, tags=tags,
+            details={
+                "description": clean_text(v.get("shortDescription", ""), 2500),
+                "products": ["%s %s" % (v.get("vendorProject", ""), v.get("product", ""))],
+                "required_action": clean_text(v.get("requiredAction", ""), 600),
+                "due_date": v.get("dueDate"),
+                "cwes": [c for c in v.get("cwes") or [] if str(c).startswith("CWE-")],
+                "references": _http_urls(re.findall(r"https?://[^\s;,]+", v.get("notes") or "")),
+            },
         )
         if item:
             items.append(item)
@@ -296,6 +347,13 @@ def parse_ghsa(data):
             "%s — %s" % (ident, a.get("summary") or ""), a.get("html_url"),
             summary, parse_date(a.get("published_at")),
             float(score) if score else None,
+            details={
+                "description": clean_text(a.get("description") or "", 2500),
+                "vector": (a.get("cvss") or {}).get("vector_string"),
+                "cwes": [c.get("cwe_id") for c in a.get("cwes") or [] if c.get("cwe_id")],
+                "products": pkgs[:6],
+                "references": _http_urls(a.get("references") or []),
+            },
         )
         if item:
             items.append(item)
@@ -308,7 +366,10 @@ def parse_github_search(data, source, category, tags=()):
         title = "%s ★%s" % (r.get("full_name", ""), r.get("stargazers_count", 0))
         item = make_item(source, category, title, r.get("html_url"),
                          r.get("description") or "",
-                         parse_date(r.get("created_at")), tags=tags)
+                         parse_date(r.get("created_at")), tags=tags,
+                         details={"stars": r.get("stargazers_count"),
+                                  "language": r.get("language"),
+                                  "last_push": r.get("pushed_at")})
         if item:
             # A repo named after a CVE should link to that CVE.
             item["cves"] = sorted(set(item["cves"]) |
@@ -481,7 +542,7 @@ SCHEMA = """
 CREATE TABLE IF NOT EXISTS items (
     id TEXT PRIMARY KEY, source TEXT, category TEXT, title TEXT, url TEXT,
     summary TEXT, published TEXT, severity REAL, cves TEXT, tags TEXT,
-    fetched_at TEXT
+    fetched_at TEXT, details TEXT
 );
 CREATE INDEX IF NOT EXISTS items_published ON items(published DESC);
 CREATE TABLE IF NOT EXISTS kev (cve TEXT PRIMARY KEY);
@@ -496,6 +557,9 @@ def open_db(path):
     db = sqlite3.connect(path)
     db.row_factory = sqlite3.Row
     db.executescript(SCHEMA)
+    # Databases created before the detail view lack this column.
+    if "details" not in [r[1] for r in db.execute("PRAGMA table_info(items)")]:
+        db.execute("ALTER TABLE items ADD COLUMN details TEXT")
     return db
 
 
@@ -503,12 +567,13 @@ def store_items(db, items):
     now = iso(utcnow())
     db.executemany(
         """INSERT INTO items VALUES (:id,:source,:category,:title,:url,:summary,
-                                     :published,:severity,:cves,:tags,:fetched_at)
+                                     :published,:severity,:cves,:tags,:fetched_at,:details)
            ON CONFLICT(id) DO UPDATE SET
              title=excluded.title, summary=excluded.summary,
              severity=COALESCE(excluded.severity, items.severity),
-             cves=excluded.cves, tags=excluded.tags""",
-        [dict(i, cves=",".join(i["cves"]), tags=",".join(i["tags"]), fetched_at=now)
+             cves=excluded.cves, tags=excluded.tags, details=excluded.details""",
+        [dict(i, cves=",".join(i["cves"]), tags=",".join(i["tags"]), fetched_at=now,
+              details=json.dumps(i.get("details") or {}))
          for i in items])
 
 
@@ -569,6 +634,7 @@ def export(db, limit=3000):
             "title": r["title"], "url": r["url"], "summary": r["summary"],
             "published": r["published"], "severity": r["severity"],
             "cves": cves, "tags": tags,
+            "details": json.loads(r["details"] or "{}"),
         })
     sources = [dict(r) for r in db.execute("SELECT * FROM source_status ORDER BY name")]
     return {"generated_at": iso(utcnow()), "items": items, "sources": sources}

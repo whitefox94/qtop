@@ -38,6 +38,14 @@ python3 -m unittest discover -s tests
 | AI security | Simon Willison's prompt-injection posts, Embrace The Red, arXiv (prompt injection, LLM jailbreak), Hacker News, new GitHub repos | nothing |
 | Social | X recent search, Threads keyword search | API tokens, see below |
 
+Tap any item to open its detail view: the link, a plain-language explanation
+(how it can be attacked, what an attacker gains, what to do), the full
+description, affected products, references and related items in your feed.
+The explanation is built from facts the sources publish (the CVSS vector,
+weakness type and CISA status), so it needs no AI service or API key.
+
+![detail view](screenshot-detail.png)
+
 The reader also cross-links: any item that mentions a CVE gets a clickable
 chip, a news story about a CVE that is in CISA KEV is flagged "known
 exploited", and anything about AI tooling from any source also appears under

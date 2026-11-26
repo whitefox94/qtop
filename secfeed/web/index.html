@@ -96,6 +96,38 @@ details table { width: 100%; border-collapse: collapse; margin-top: 8px; }
 details td { padding: 4px 6px; border-top: 1px solid var(--line); vertical-align: top; overflow-wrap: anywhere; }
 .ok { color: var(--low); } .error { color: var(--crit); } .skipped { color: var(--med); }
 #more { display: block; margin: 12px auto; }
+article { cursor: pointer; }
+article:hover { border-color: var(--accent); }
+dialog {
+  width: 100%; max-width: min(720px, calc(100vw - 24px)); max-height: 88vh; max-height: 88dvh;
+  padding: 0; border: 1px solid var(--line); border-radius: 12px;
+  background: var(--panel); color: var(--ink);
+}
+dialog::backdrop { background: rgba(0, 0, 0, 0.55); }
+.d-bar {
+  position: sticky; top: 0; display: flex; gap: 8px; align-items: center;
+  padding: 10px 14px; background: var(--panel); border-bottom: 1px solid var(--line);
+}
+.d-bar .meta { flex: 1; min-width: 0; }
+.d-body { padding: 14px 16px 20px; display: flex; flex-direction: column; gap: 16px; }
+.d-body h2 { font-size: 18px; margin: 0; line-height: 1.3; overflow-wrap: anywhere; text-wrap: balance; }
+.d-body h3 { font-size: 11.5px; letter-spacing: 0.07em; text-transform: uppercase; color: var(--muted); margin: 0 0 6px; }
+.d-body p, .d-body ul { margin: 0; overflow-wrap: anywhere; }
+.d-body ul { padding-left: 18px; display: flex; flex-direction: column; gap: 5px; }
+.d-body li b { font-weight: 600; }
+.d-actions { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+.d-open {
+  display: inline-block; background: var(--accent); color: var(--bg); font-weight: 600;
+  padding: 8px 14px; border-radius: 8px; text-decoration: none;
+}
+.d-url { font: 12px ui-monospace, Menlo, Consolas, monospace; color: var(--muted); user-select: all; overflow-wrap: anywhere; }
+.d-facts { display: grid; grid-template-columns: max-content 1fr; gap: 4px 14px; margin: 0; font-size: 13.5px; }
+.d-facts dt { color: var(--muted); }
+.d-facts dd { margin: 0; min-width: 0; overflow-wrap: anywhere; }
+.d-refs a, .d-related button { color: var(--accent); font-size: 13.5px; }
+.d-related button { display: block; width: 100%; text-align: left; border: 0; background: none; padding: 4px 0; }
+.d-related button:hover { text-decoration: underline; }
+.d-related small { color: var(--muted); }
 </style>
 </head>
 <body>
@@ -131,6 +163,10 @@ details td { padding: 4px 6px; border-top: 1px solid var(--line); vertical-align
     </details>
   </div>
 </main>
+<dialog id="detail" aria-label="Item details">
+  <div class="d-bar"><div class="meta" id="d-meta"></div><button id="d-close">Close</button></div>
+  <div class="d-body" id="d-body"></div>
+</dialog>
 <script>
 "use strict";
 // Everything from feeds is inserted with textContent, never innerHTML, so a
@@ -193,14 +229,14 @@ function filtered(tabFn) {
 
 function card(i) {
   const a = el("article", (i._watch ? "watch " : "") + (i.tags.includes("kev") ? "kev" : ""));
-  const meta = el("div", "meta");
-  meta.append(el("span", null, i.source), el("span", null, "·"), el("span", null, ago(i.published)));
-  meta.lastChild.title = new Date(i.published).toLocaleString();
-  if (i.severity != null) meta.append(el("span", "pill " + sevClass(i.severity), "CVSS " + i.severity.toFixed(1)));
-  if (i.tags.includes("kev")) meta.append(el("span", "pill kev", "KNOWN EXPLOITED"));
-  else if (i.tags.includes("exploited")) meta.append(el("span", "pill kev", "EXPLOITED"));
-  if (i.tags.includes("ai") && i.category !== "ai") meta.append(el("span", "pill ai", "AI"));
-  for (const t of ["poc", "paper", "ransomware"]) if (i.tags.includes(t)) meta.append(el("span", "pill tag", t.toUpperCase()));
+  // A tap opens the detail view. Ctrl/Cmd/middle-click on the title still
+  // opens the original in a new tab, because the link keeps its real href.
+  a.onclick = e => {
+    if (e.target.closest("button") || e.metaKey || e.ctrlKey || e.shiftKey) return;
+    e.preventDefault();
+    openDetail(i);
+  };
+  const meta = metaRow(i);
   const h = el("h2");
   const link = el("a", null, i.title);
   if (/^https?:\/\//i.test(i.url)) link.href = i.url;
@@ -217,6 +253,190 @@ function card(i) {
   }
   a.append(chips);
   return a;
+}
+
+function metaRow(i) {
+  const meta = el("div", "meta");
+  meta.append(el("span", null, i.source), el("span", null, "·"), el("span", null, ago(i.published)));
+  meta.lastChild.title = new Date(i.published).toLocaleString();
+  if (i.severity != null) meta.append(el("span", "pill " + sevClass(i.severity), "CVSS " + i.severity.toFixed(1)));
+  if (i.tags.includes("kev")) meta.append(el("span", "pill kev", "KNOWN EXPLOITED"));
+  else if (i.tags.includes("exploited")) meta.append(el("span", "pill kev", "EXPLOITED"));
+  if (i.tags.includes("ai") && i.category !== "ai") meta.append(el("span", "pill ai", "AI"));
+  for (const t of ["poc", "paper", "ransomware"]) if (i.tags.includes(t)) meta.append(el("span", "pill tag", t.toUpperCase()));
+  return meta;
+}
+
+// ---- Plain-language explanation -------------------------------------------
+// Built from facts the sources publish (CVSS vector, weakness type, KEV
+// status), so it needs no AI service and says nothing the data doesn't.
+
+const CWE = {
+  "CWE-20": ["Improper input validation", "The software trusts data it should have checked."],
+  "CWE-22": ["Path traversal", "An attacker can reach files outside the folder they should be limited to."],
+  "CWE-77": ["Command injection", "An attacker can slip their own commands into ones the software runs."],
+  "CWE-78": ["OS command injection", "An attacker can make the server run operating-system commands of their choosing."],
+  "CWE-79": ["Cross-site scripting (XSS)", "An attacker can plant script in a page so it runs in other visitors' browsers."],
+  "CWE-89": ["SQL injection", "An attacker can rewrite the app's database queries to read or change data."],
+  "CWE-94": ["Code injection", "An attacker can get their own code executed by the application."],
+  "CWE-119": ["Memory corruption", "The program can be made to read or write memory it shouldn't, often leading to crashes or code execution."],
+  "CWE-125": ["Out-of-bounds read", "The program can be made to read memory it shouldn't, leaking data or crashing."],
+  "CWE-190": ["Integer overflow", "A number wraps around, which can lead to memory corruption."],
+  "CWE-200": ["Information exposure", "The software reveals data to someone who shouldn't see it."],
+  "CWE-269": ["Improper privilege management", "A user can end up with more rights than intended."],
+  "CWE-287": ["Improper authentication", "The login check can be bypassed or fooled."],
+  "CWE-306": ["Missing authentication", "A sensitive function can be used without logging in at all."],
+  "CWE-352": ["Cross-site request forgery (CSRF)", "A malicious page can make a logged-in user's browser perform actions for the attacker."],
+  "CWE-400": ["Resource exhaustion", "An attacker can use up memory or CPU until the service stops responding."],
+  "CWE-416": ["Use after free", "The program uses memory after releasing it, which attackers can turn into code execution."],
+  "CWE-434": ["Unrestricted file upload", "An attacker can upload a dangerous file, such as a script the server will run."],
+  "CWE-476": ["NULL pointer dereference", "The program can be made to crash."],
+  "CWE-502": ["Unsafe deserialization", "Data sent by an attacker is turned into live objects, often leading to code execution."],
+  "CWE-601": ["Open redirect", "A trusted link can be made to send users to an attacker's site."],
+  "CWE-732": ["Incorrect permissions", "Files or resources are accessible to users who shouldn't have access."],
+  "CWE-787": ["Out-of-bounds write", "The program can be made to write past the end of its memory, often leading to code execution."],
+  "CWE-798": ["Hard-coded credentials", "A password or key is built into the product, so anyone who learns it can get in."],
+  "CWE-862": ["Missing authorization", "The software doesn't check whether the user is allowed to do the action."],
+  "CWE-863": ["Incorrect authorization", "The permission check exists but can be bypassed."],
+  "CWE-918": ["Server-side request forgery (SSRF)", "An attacker can make the server send requests to internal systems on their behalf."],
+  "CWE-1321": ["Prototype pollution", "An attacker can tamper with built-in JavaScript objects and change how the app behaves."],
+};
+
+function parseVector(v) {
+  const o = {};
+  for (const part of (v || "").split("/")) {
+    const [k, val] = part.split(":");
+    if (k && val && k !== "CVSS") o[k] = val;
+  }
+  return o;
+}
+
+function explain(i) {
+  const d = i.details || {}, out = [], todo = [];
+  const add = (head, text) => out.push([head, text]);
+  if (i.tags.includes("kev")) {
+    add("Being used in real attacks.", "It is on the US cybersecurity agency CISA's list of vulnerabilities seen exploited in the wild.");
+  } else if (i.tags.includes("exploited")) {
+    add("Reported as exploited.", "This item says attackers are already using it, or calls it a zero-day (attacked before a fix existed).");
+  }
+  if (i.tags.includes("ransomware")) add("Used by ransomware groups.", "CISA has linked it to ransomware campaigns.");
+  if (i.severity != null) {
+    const s = i.severity, n = s.toFixed(1) + " out of 10";
+    add(s >= 9 ? "Critical severity (" + n + ")." : s >= 7 ? "High severity (" + n + ")." : s >= 4 ? "Medium severity (" + n + ")." : "Low severity (" + n + ").",
+        s >= 9 ? "About as bad as it gets: usually easy to attack and with full impact." :
+        s >= 7 ? "Serious: worth fixing soon if you run the affected software." :
+        s >= 4 ? "Real, but limited by what an attacker needs or what they can gain." : "Limited impact or hard to use.");
+  } else if (i.source === "NVD") {
+    add("No severity score yet.", "New CVEs often wait days for a score, so judge this one by its description.");
+  }
+  const v = parseVector(d.vector);
+  const av = { N: ["Reachable over the network.", "An attacker does not need to be near the device; if the system faces the internet, anyone can try."],
+               A: ["Needs to be on the same network.", "The attacker must be on the same local network, Wi-Fi or Bluetooth range."],
+               L: ["Needs local access.", "The attacker must already be able to run something on the machine, or get a user to open a file."],
+               P: ["Needs physical access.", "The attacker must have their hands on the device."] }[v.AV];
+  if (av) add(...av);
+  const pr = { N: ["No login needed.", "The attacker doesn't need an account."],
+               L: ["Needs an ordinary account.", "Any regular user login is enough."],
+               H: ["Needs admin rights.", "Only someone who is already an administrator can use it."] }[v.PR] ||
+             { N: ["No login needed.", "The attacker doesn't need an account."],
+               S: ["Needs a login.", "The attacker must be signed in."], M: ["Needs several logins.", "The attacker must authenticate more than once."] }[v.Au];
+  if (pr) add(...pr);
+  if (v.UI === "N") add("No victim action needed.", "Nobody has to click a link or open a file for the attack to work.");
+  else if (v.UI) add("Needs someone to act.", "A person has to be tricked into something, such as clicking a link or opening a file.");
+  if (v.AC === "H") add("Hard to pull off.", "The attack depends on conditions the attacker doesn't control, such as timing or an unusual setup.");
+  const hi = k => ["H", "C"].includes(v[k] || v["V" + k]);
+  const impact = [hi("C") && "read private data", hi("I") && "change data or settings", hi("A") && "take the system offline"].filter(Boolean);
+  if (impact.length) add("If it succeeds:", "the attacker can " + impact.join(", ").replace(/, ([^,]*)$/, " and $1") + ".");
+  for (const c of d.cwes || []) if (CWE[c]) add("Type of flaw: " + CWE[c][0] + ".", CWE[c][1]);
+  if (i.tags.includes("poc")) add("Exploit code is public.", "A proof-of-concept is on GitHub, which makes attacks easier. Treat code from unknown repos as untrusted: fake PoCs that carry malware are common.");
+  if (i.tags.includes("paper")) add("Academic paper.", "It describes research, which may not match attacks seen in practice yet.");
+  if (i.category === "social") add("Social post.", "Unverified until a vendor or known researcher confirms it.");
+  if (i.tags.includes("ai") && !out.length) add("About AI systems.", "It concerns attacks on, or security of, AI models and the tools built on them.");
+
+  if (d.required_action) todo.push(d.required_action + (d.due_date ? " US federal agencies must do this by " + d.due_date + ", which is a sensible deadline for anyone." : ""));
+  if (i.category === "cve" && !i.tags.includes("poc")) {
+    const what = (d.products || []).length ? d.products.slice(0, 3).join(", ") : "the affected product";
+    todo.push("Check whether you run " + what + ". If you do, install the vendor's update or apply its workaround.");
+    if (i.tags.includes("kev") || i.tags.includes("exploited")) todo.push("Because it is under attack, also look for signs it was already used against you; the references usually list what to check.");
+  }
+  return { out, todo };
+}
+
+function section(title, node) {
+  const s = el("section");
+  s.append(el("h3", null, title), node);
+  return s;
+}
+
+function openDetail(i) {
+  const d = i.details || {}, body = $("d-body");
+  $("d-meta").replaceWith(Object.assign(metaRow(i), { id: "d-meta" }));
+  body.replaceChildren(el("h2", null, i.title));
+
+  const actions = el("div", "d-actions");
+  const open = el("a", "d-open", "Open original ↗");
+  if (/^https?:\/\//i.test(i.url)) open.href = i.url;
+  open.target = "_blank"; open.rel = "noopener noreferrer";
+  const copy = el("button", null, "Copy link");
+  copy.onclick = async () => {
+    try { await navigator.clipboard.writeText(i.url); copy.textContent = "Copied"; }
+    catch { copy.textContent = "Select the link below to copy"; }
+  };
+  actions.append(open, copy);
+  body.append(actions, el("div", "d-url", i.url));
+
+  const { out, todo } = explain(i);
+  if (out.length) {
+    const ul = el("ul");
+    for (const [head, text] of out) { const li = el("li"); li.append(el("b", null, head), " " + text); ul.append(li); }
+    body.append(section("In plain terms", ul));
+  }
+  if (todo.length) {
+    const ul = el("ul");
+    for (const t of todo) ul.append(el("li", null, t));
+    body.append(section("What to do", ul));
+  }
+  const text = d.description || i.summary;
+  if (text) body.append(section(d.description ? "Official description" : "Summary", el("p", null, text)));
+
+  const facts = el("dl", "d-facts");
+  const fact = (k, val) => { if (val) facts.append(el("dt", null, k), el("dd", null, String(val))); };
+  fact("Published", new Date(i.published).toLocaleString());
+  fact("Source", i.source);
+  fact("CVE", i.cves.join(", "));
+  fact("Affects", (d.products || []).join(", "));
+  fact("Weakness", (d.cwes || []).map(c => CWE[c] ? c + " (" + CWE[c][0] + ")" : c).join(", "));
+  fact("CVSS vector", d.vector);
+  fact("Fix deadline", d.due_date);
+  fact("Stars", d.stars); fact("Language", d.language);
+  fact("Last push", d.last_push && new Date(d.last_push).toLocaleString());
+  body.append(section("Facts", facts));
+
+  if ((d.references || []).length) {
+    const ul = el("ul", "d-refs");
+    for (const u of d.references) {
+      if (!/^https?:\/\//i.test(u)) continue;
+      const a = el("a", null, u.replace(/^https?:\/\//, "").slice(0, 80));
+      a.href = u; a.target = "_blank"; a.rel = "noopener noreferrer";
+      const li = el("li"); li.append(a); ul.append(li);
+    }
+    body.append(section("References", ul));
+  }
+
+  const related = state.items.filter(o => o !== i && o.cves.some(c => i.cves.includes(c))).slice(0, 8);
+  if (related.length) {
+    const box = el("div", "d-related");
+    for (const r of related) {
+      const b = el("button");
+      b.append(r.title + " ", el("small", null, "· " + r.source));
+      b.onclick = () => openDetail(r);
+      box.append(b);
+    }
+    body.append(section("Also in your feed about this", box));
+  }
+  const dlg = $("detail");
+  if (!dlg.open) dlg.showModal();
+  dlg.scrollTop = 0;
 }
 
 function render() {
@@ -278,6 +498,8 @@ async function load() {
   }
 }
 
+$("d-close").onclick = () => $("detail").close();
+$("detail").onclick = e => { if (e.target === $("detail")) $("detail").close(); };  // tap outside
 $("q").oninput = e => { state.q = e.target.value; state.shown = PAGE; render(); };
 $("sev").onchange = e => { state.sev = +e.target.value; state.shown = PAGE; render(); };
 $("src").onchange = e => { state.src = e.target.value; state.shown = PAGE; render(); };
