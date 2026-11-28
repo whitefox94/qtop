@@ -201,6 +201,21 @@ class Classify(unittest.TestCase):
         self.assertEqual(sf.classify("Something obscure"), (["Other"], ["Other"]))
         self.assertIn("AI & ML", sf.classify("Prompt injection in an MCP server")[0])
 
+def _zd(title):
+    import secfeed as _sf
+    return "zeroday" in (_sf.make_item("S", "news", title, "https://e.com/" + title[:8]) or {}).get("tags", [])
+
+
+class ZeroDay(unittest.TestCase):
+    def test_zeroday_tag(self):
+        self.assertTrue(_zd("New Windows 11 lock screen zero-day unlocks BitLocker"))
+        self.assertTrue(_zd("ZDI-26-1019: (0Day) Open Robotics ROS 2 Information Disclosure"))
+        self.assertTrue(_zd("Fortinet flaw exploited before a patch was available"))
+        self.assertFalse(_zd("Microsoft ships 90-day certificate rotation guidance"))
+        self.assertFalse(_zd("Routine patch Tuesday wrap-up"))
+
+
+class ClassifyAi(unittest.TestCase):
     def test_classify_ai_model(self):
         self.assertEqual(sf.classify_ai("New jailbreak bypasses ChatGPT and GPT-4o guardrails"),
                          ["ChatGPT / OpenAI"])

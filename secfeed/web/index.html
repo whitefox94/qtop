@@ -201,6 +201,8 @@ const TABS = [
     { sort: (a, b) => b._score - a._score, max: 100,
       note: "CVEs from the last 14 days, ranked by how likely they are to hurt: seen in real attacks, public exploit code, exploitation probability (EPSS), severity, and your watchlist." }],
   ["cve", "CVEs", i => i.category === "cve"],
+  ["zeroday", "Zero-days", i => i.tags.includes("zeroday"),
+    { note: "Flaws reported as attacked before a patch existed (\"zero-day\"), gathered from every source. A zero-day is unknown until someone discloses it, so this is every one publicly reported, not every one that exists." }],
   ["exploited", "Exploited", i => i.tags.includes("kev") || i.tags.includes("exploited")],
   ["exploit", "Exploits", i => i.category === "exploit" || i.tags.includes("poc"),
     { note: "Public exploit code and disclosures. Knowing what attackers can already download tells you what to patch and test first." }],
@@ -280,6 +282,7 @@ function markWatch() {
     if (i.category === "cve" && !isExploit) {
       if (i.tags.includes("kev")) { score += 100; why.push("seen in real attacks (CISA)"); }
       else if (i.tags.includes("exploited")) { score += 45; why.push("reported as exploited"); }
+      if (i.tags.includes("zeroday")) { score += 50; why.push("zero-day (attacked before a fix)"); }
       if (i._exploit) { score += 30; why.push("exploit code is public"); }
       if (i.epss != null) { score += i.epss * 60; if (i.epss >= 0.05) why.push(Math.round(i.epss * 100) + "% exploitation probability"); }
       if (i.severity != null) { score += i.severity * 3; if (i.severity >= 9) why.push("critical severity"); }
@@ -292,7 +295,7 @@ function markWatch() {
 
 // Filter-chip dimensions: [stateKey, itemField, title]. Vulnerability tabs
 // get the two CVE categories; the AI tab gets which model or tool it is about.
-const CAT_TABS = ["priority", "cve", "exploited", "exploit"];
+const CAT_TABS = ["priority", "cve", "zeroday", "exploited", "exploit"];
 const DIMS = {
   area: ["area", "areas", "What it affects"],
   attack: ["attack", "attacks", "Kind of attack"],
@@ -353,8 +356,9 @@ function metaRow(i) {
   meta.append(el("span", null, i.source), el("span", null, "·"), el("span", null, ago(i.published)));
   meta.lastChild.title = new Date(i.published).toLocaleString();
   if (i.severity != null) meta.append(el("span", "pill " + sevClass(i.severity), "CVSS " + i.severity.toFixed(1)));
+  if (i.tags.includes("zeroday")) meta.append(el("span", "pill hot", "ZERO-DAY"));
   if (i.tags.includes("kev")) meta.append(el("span", "pill kev", "KNOWN EXPLOITED"));
-  else if (i.tags.includes("exploited")) meta.append(el("span", "pill kev", "EXPLOITED"));
+  else if (i.tags.includes("exploited") && !i.tags.includes("zeroday")) meta.append(el("span", "pill kev", "EXPLOITED"));
   if (i.tags.includes("ai") && i.category !== "ai") meta.append(el("span", "pill ai", "AI"));
   const kind = [(i.areas || [])[0], (i.attacks || [])[0], (i.models || [])[0]]
     .filter(c => c && c !== "Other" && c !== "General").join(" · ");
@@ -412,9 +416,12 @@ function parseVector(v) {
 function explain(i) {
   const d = i.details || {}, out = [], todo = [];
   const add = (head, text) => out.push([head, text]);
+  if (i.tags.includes("zeroday")) {
+    add("Zero-day.", "Reported as attacked before a patch was available, so for a while there was no fix, only workarounds. These are the most urgent to act on.");
+  }
   if (i.tags.includes("kev")) {
     add("Being used in real attacks.", "It is on the US cybersecurity agency CISA's list of vulnerabilities seen exploited in the wild.");
-  } else if (i.tags.includes("exploited")) {
+  } else if (i.tags.includes("exploited") && !i.tags.includes("zeroday")) {
     add("Reported as exploited.", "This item says attackers are already using it, or calls it a zero-day (attacked before a fix existed).");
   }
   if (i._exploit) add("Exploit code is public.", "Working or proof-of-concept attack code for this is listed in your feed (see the related items below), so less-skilled attackers can use it too.");

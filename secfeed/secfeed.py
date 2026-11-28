@@ -54,6 +54,13 @@ EXPLOITED_RE = re.compile(
     r"zero[\s-]day|0[\s-]day|in-the-wild exploitation",
     re.I,
 )
+# A tighter match for zero-days: a flaw attacked before, or with no, fix.
+# ZDI marks these "(0Day)" in advisory titles.
+ZERODAY_RE = re.compile(
+    r"zero[\s-]?day|\b0[\s-]?day\b|\(0day\)|exploited (before|prior to|without)[^.]{0,30}patch|"
+    r"no patch (is )?(yet )?available|unpatched[^.]{0,40}exploit",
+    re.I,
+)
 
 
 # Vulnerability categories. Two independent questions a reader asks of a CVE:
@@ -284,6 +291,9 @@ def make_item(source, category, title, url, summary="", published=None,
     if category == "ai" or AI_RE.search(text):
         tags.add("ai")
     if EXPLOITED_RE.search(text):
+        tags.add("exploited")
+    if ZERODAY_RE.search(text):
+        tags.add("zeroday")
         tags.add("exploited")
     return {
         "id": hashlib.sha1(url.encode()).hexdigest()[:20],

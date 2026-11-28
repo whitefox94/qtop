@@ -33,6 +33,8 @@
      "url": "https://portswigger.net/research/rss"},
     {"type": "rss", "name": "watchTowr Labs", "category": "research",
      "url": "https://labs.watchtowr.com/rss/"},
+    {"type": "rss", "name": "Google Project Zero", "category": "research",
+     "url": "https://googleprojectzero.blogspot.com/feeds/posts/default"},
     {"type": "rss", "name": "ZDI blog", "category": "research",
      "url": "https://www.zerodayinitiative.com/blog?format=rss"},
     {"type": "rss", "name": "Unit 42", "category": "research",
