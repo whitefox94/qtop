@@ -37,7 +37,7 @@ python3 -m unittest discover -s tests
 | CVEs | New vulnerabilities | NVD (CVSS 7.0+), CISA KEV, GitHub Advisories, ZDI advisories, oss-security |
 | Exploited | Anything seen or reported in real attacks | CISA KEV plus keyword matches in every feed |
 | Exploits | Public exploit code and disclosures | Exploit-DB, Full Disclosure, new GitHub repos named after a CVE |
-| News | Security news and breaches | The Hacker News, BleepingComputer, Krebs, SANS ISC, Schneier, SecurityWeek, The Record, Dark Reading, Have I Been Pwned |
+| News | Security news and breaches | The Hacker News, BleepingComputer, Krebs, SANS ISC, Schneier, SecurityWeek, The Record, Dark Reading, Tom's Hardware, The Register, Have I Been Pwned |
 | Research | Technique and threat write-ups | PortSwigger Research, watchTowr Labs, ZDI blog, Unit 42, Cisco Talos, The DFIR Report, Trail of Bits, Rapid7 |
 | AI security | Prompt injection, jailbreaks, agent attacks | Simon Willison, Embrace The Red, arXiv, Hacker News, GitHub, plus AI stories from every other feed |
 | Tools | New releases of testing tools | GitHub releases of nuclei, nuclei-templates, Metasploit, sqlmap, ffuf, Impacket, BloodHound, ZAP, Ghidra, hashcat |

@@ -75,6 +75,10 @@
      "url": "https://therecord.media/feed"},
     {"type": "rss", "name": "Dark Reading", "category": "news",
      "url": "https://www.darkreading.com/rss.xml"},
+    {"type": "rss", "name": "Tom's Hardware", "category": "news",
+     "url": "https://www.tomshardware.com/feeds/tag/security"},
+    {"type": "rss", "name": "The Register", "category": "news",
+     "url": "https://www.theregister.com/security/headlines.atom"},
 
     {"type": "rss", "name": "Simon Willison: prompt injection", "category": "ai",
      "url": "https://simonwillison.net/tags/prompt-injection.atom"},
